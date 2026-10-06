@@ -1,0 +1,13 @@
+#Dépendances 
+node_modules/
+
+#Secrets
+.env
+credentials.json
+
+#données personnelles
+*.pdf
+
+#Fichiers de travail
+debug.png
+_proposition-claude/
