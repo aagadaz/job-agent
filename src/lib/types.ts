@@ -7,14 +7,15 @@ export interface JobDetail{
     company : string;
     location :string;
     url: string;
+    qualifications:string;
 }
 
 export interface OfferScore{
     score : number;
-    verdict : 'Postuler' | 'A étudier' | 'Ignorer';
+    verdict : 'Postuler' | 'À étudier' | 'Ignorer';
     justification : string;
     strengths : string[];
-    missingskills : string[];
+    missingSkills : string[];
 
 }
 
