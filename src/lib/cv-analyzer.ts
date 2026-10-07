@@ -1,4 +1,4 @@
-import Anthropic from '@Anthropic-ai/sdk'
+import Anthropic from '@anthropic-ai/sdk'
 import fs from 'fs';
 import {PDFParse} from 'pdf-parse';
 import * as dotenv from 'dotenv';
@@ -20,12 +20,12 @@ export interface SearchParams {
   niveauxExperience: string;
 }
 
-export Interface CVAnalysis {
+export interface CVAnalysis {
   cvText : string ;
   params : SearchParams;
 }
 
-const DEFAUL_PARAMS : SearchParams = {
+const DEFAULT_PARAMS : SearchParams = {
   keywords : [' data scientist', 'machine learning', 'AI Engineer'],
   location : 'France',
   niveauxExperience : '101881',
