@@ -1,10 +1,8 @@
 import { google, sheets_v4 } from 'googleapis';
-import * as dotenv from 'dotenv';
 import type { ScoredOffer } from './types';
 
-dotenv.config();
-
 const SHEET_NAME = 'candidatures';
+const REJECTED_SHEET_NAME = 'rejetees';
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID;
 
 // Les nouvelles colonnes sont AJOUTÉES À LA FIN (K → P) : les lignes déjà
@@ -28,8 +26,9 @@ const HEADERS = [
   "Date d'ajout",           // P
 ];
 
-const URL_COLUMN = 'I';
-const LAST_COLUMN = 'P';
+// Onglet "mémoire" des offres écartées : juste assez pour ne pas les re-noter.
+const REJECTED_HEADERS = ['URL', 'Score', 'Titre', 'Justification', "Date d'ajout"];
+
 const MAX_CELL_LENGTH = 49_000; // limite Google Sheets : 50 000 caractères par cellule
 
 let sheetsClient: sheets_v4.Sheets | null = null;
@@ -37,8 +36,11 @@ let sheetsClient: sheets_v4.Sheets | null = null;
 function getSheets(): sheets_v4.Sheets {
   // Singleton : un seul client authentifié pour toute l'exécution.
   if (!sheetsClient) {
+    // En CI, la clé du compte de service arrive en JSON dans une variable d'environnement ;
+    // en local, on garde le fichier credentials.json.
+    const json = process.env.GOOGLE_CREDENTIALS_JSON;
     const auth = new google.auth.GoogleAuth({
-      keyFile: process.env.GOOGLE_CREDENTIALS_PATH,
+      ...(json ? { credentials: JSON.parse(json) } : { keyFile: process.env.GOOGLE_CREDENTIALS_PATH }),
       scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
     sheetsClient = google.sheets({ version: 'v4', auth });
@@ -59,34 +61,64 @@ export function normalizeUrl(url: string): string {
   }
 }
 
-/** Écrit les en-têtes uniquement s'ils sont absents ou ont changé. Idempotent. */
-export async function ensureHeaders(): Promise<void> {
+/** Lettre de colonne pour un index 1-based (1 → A, 16 → P). Suffit jusqu'à Z. */
+function columnLetter(n: number): string {
+  return String.fromCharCode(64 + n);
+}
+
+/** Crée l'onglet s'il n'existe pas. Idempotent. */
+async function ensureTab(title: string): Promise<void> {
   const sheets = getSheets();
+  const res = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID,
+    fields: 'sheets.properties.title',
+  });
+  const exists = res.data.sheets?.some(s => s.properties?.title === title);
+  if (exists) return;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: { requests: [{ addSheet: { properties: { title } } }] },
+  });
+  console.log(`✅ Onglet "${title}" créé`);
+}
+
+/** Écrit la ligne d'en-têtes uniquement si elle est absente ou différente. Idempotent. */
+async function ensureHeaderRow(tab: string, headers: string[]): Promise<void> {
+  const sheets = getSheets();
+  const last = columnLetter(headers.length);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A1:${LAST_COLUMN}1`,
+    range: `${tab}!A1:${last}1`,
   });
   const current = res.data.values?.[0] ?? [];
-  const upToDate = HEADERS.every((h, i) => current[i] === h);
-  if (upToDate) return;
+  if (headers.every((h, i) => current[i] === h)) return;
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A1`,
+    range: `${tab}!A1`,
     valueInputOption: 'RAW',
-    requestBody: { values: [HEADERS] },
+    requestBody: { values: [headers] },
   });
-  console.log('✅ En-têtes mis à jour');
+  console.log(`✅ En-têtes de "${tab}" mis à jour`);
 }
 
-/** Renvoie l'ensemble des URLs (normalisées) déjà présentes dans le Sheet. */
+/** Prépare les deux onglets (création + en-têtes). */
+export async function ensureHeaders(): Promise<void> {
+  await ensureTab(SHEET_NAME);
+  await ensureHeaderRow(SHEET_NAME, HEADERS);
+  await ensureTab(REJECTED_SHEET_NAME);
+  await ensureHeaderRow(REJECTED_SHEET_NAME, REJECTED_HEADERS);
+}
+
+/** URLs (normalisées) déjà vues : offres retenues ET offres écartées. */
 export async function getExistingUrls(): Promise<Set<string>> {
-  const sheets = getSheets();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await getSheets().spreadsheets.values.batchGet({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!${URL_COLUMN}2:${URL_COLUMN}`,
+    ranges: [`${SHEET_NAME}!I2:I`, `${REJECTED_SHEET_NAME}!A2:A`],
   });
-  const urls = (res.data.values ?? [])
+  const urls = (res.data.valueRanges ?? [])
+    .flatMap(range => range.values ?? [])
     .map(row => row[0])
     .filter((v): v is string => typeof v === 'string' && v.length > 0)
     .map(normalizeUrl);
@@ -97,7 +129,17 @@ function truncate(value: string): string {
   return value.length > MAX_CELL_LENGTH ? value.slice(0, MAX_CELL_LENGTH) + '…' : value;
 }
 
-/** Ajoute les offres en fin de tableau. Ne modifie jamais les lignes existantes. */
+async function appendRows(tab: string, rows: (string | number)[][]): Promise<void> {
+  await getSheets().spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${tab}!A1`,
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    requestBody: { values: rows },
+  });
+}
+
+/** Ajoute les offres retenues en fin de tableau. Ne modifie jamais les lignes existantes. */
 export async function appendOffers(offers: ScoredOffer[]): Promise<void> {
   if (offers.length === 0) {
     console.log('ℹ️ Aucune nouvelle offre à ajouter');
@@ -105,7 +147,7 @@ export async function appendOffers(offers: ScoredOffer[]): Promise<void> {
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const rows = offers.map(o => [
+  await appendRows(SHEET_NAME, offers.map(o => [
     o.title,
     o.company,
     o.location,
@@ -122,15 +164,21 @@ export async function appendOffers(offers: ScoredOffer[]): Promise<void> {
     o.scoring?.strengths.join(' • ') ?? '',
     o.scoring?.missingSkills.join(' • ') ?? '',
     today,
-  ]);
+  ]));
+  console.log(`✅ ${offers.length} offres ajoutées à "${SHEET_NAME}"`);
+}
 
-  await getSheets().spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A1`,
-    valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: rows },
-  });
+/** Mémorise les offres écartées pour ne pas les re-noter aux prochaines exécutions. */
+export async function appendRejected(offers: ScoredOffer[]): Promise<void> {
+  if (offers.length === 0) return;
 
-  console.log(`✅ ${rows.length} offres ajoutées au Google Sheet`);
+  const today = new Date().toISOString().slice(0, 10);
+  await appendRows(REJECTED_SHEET_NAME, offers.map(o => [
+    normalizeUrl(o.url),
+    o.scoring?.score ?? '',
+    o.title,
+    o.scoring?.justification ?? '',
+    today,
+  ]));
+  console.log(`🗑️ ${offers.length} offres écartées mémorisées dans "${REJECTED_SHEET_NAME}"`);
 }

@@ -44,7 +44,8 @@ export async function extractCVText(cvPath:string): Promise <string> {
 }
 
 export async function analyzeCV(cvPath: string): Promise<CVAnalysis> {
-  const cvText = await extractCVText(cvPath);
+  // En CI, le texte du CV arrive via la variable CV_TEXT (le PDF n'est pas versionné)
+  const cvText = process.env.CV_TEXT?.trim() || (await extractCVText(cvPath));
   console.log('📄 CV extrait, envoi à Claude...');
 
   // "Tool use forcé" : on décrit la forme attendue avec un JSON Schema et on

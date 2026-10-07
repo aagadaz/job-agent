@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/main.ts",
+    "cv:text": "tsx src/tools/export-cv-text.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],

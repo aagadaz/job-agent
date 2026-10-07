@@ -1,0 +1,64 @@
+name: Daily job search
+
+on:
+  schedule:
+    # GitHub interprète les crons en UTC. 7h à Paris = 5h UTC (heure d'été) ou 6h UTC (heure d'hiver) :
+    # on planifie les deux, et le job "gate" ne laisse passer que celui qui tombe à 7h heure de Paris.
+    - cron: '0 5 * * *'
+    - cron: '0 6 * * *'
+  workflow_dispatch: # bouton "Run workflow" pour lancer à la main
+
+concurrency:
+  group: job-agent      # jamais deux exécutions en parallèle
+  cancel-in-progress: false
+
+permissions:
+  contents: read        # principe du moindre privilège : le job ne fait que lire le dépôt
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        run: |
+          HOUR=$(TZ=Europe/Paris date +%H)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$HOUR" = "07" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Il est ${HOUR}h à Paris : exécution ignorée"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  search:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # le scraper APEC n'est plus utilisé
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run agent
+        run: npm start
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          CV_TEXT: ${{ secrets.CV_TEXT }}
+          SCORE_REJECT_THRESHOLD: '35'
