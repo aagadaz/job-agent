@@ -6,7 +6,11 @@
   "scripts": {
     "start": "tsx src/main.ts",
     "cv:text": "tsx src/tools/export-cv-text.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate":"drizzle-kit migrate",
+    "db:studio":"drizzle-kit studio",
+    "db:seed":"tsx src/db/seed.ts"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +18,8 @@
   "description": "",
   "devDependencies": {
     "@types/node": "^25.5.0",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "^0.31.11",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
@@ -21,8 +27,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "dotenv": "^17.3.1",
+    "drizzle-orm": "^0.45.4",
     "googleapis": "^171.4.0",
     "pdf-parse": "^2.4.5",
+    "pg": "^8.23.1",
     "playwright": "^1.58.2"
   }
 }
