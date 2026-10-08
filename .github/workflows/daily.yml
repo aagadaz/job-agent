@@ -2,10 +2,11 @@ name: Daily job search
 
 on:
   schedule:
-    # GitHub interprète les crons en UTC. 7h à Paris = 5h UTC (heure d'été) ou 6h UTC (heure d'hiver) :
-    # on planifie les deux, et le job "gate" ne laisse passer que celui qui tombe à 7h heure de Paris.
-    - cron: '0 5 * * *'
-    - cron: '0 6 * * *'
+    # GitHub interprète les crons en UTC. 7h17 à Paris = 5h17 UTC en heure d'été (UTC+2)
+    # ou 6h17 UTC en heure d'hiver (UTC+1). On planifie les deux ; le job "gate" garde
+    # celui qui correspond à la saison. Minute 17 : on évite le pic de charge du début d'heure.
+    - cron: '17 5 * * *'
+    - cron: '17 6 * * *'
   workflow_dispatch: # bouton "Run workflow" pour lancer à la main
 
 concurrency:
@@ -22,12 +23,19 @@ jobs:
       run: ${{ steps.check.outputs.run }}
     steps:
       - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          CRON: ${{ github.event.schedule }}
         run: |
-          HOUR=$(TZ=Europe/Paris date +%H)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$HOUR" = "07" ]; then
+          # On raisonne sur le cron qui a déclenché le run, pas sur l'heure courante :
+          # un run parti en retard est donc conservé.
+          OFFSET=$(TZ=Europe/Paris date +%z)   # +0200 en été, +0100 en hiver
+          if [ "$EVENT" = "workflow_dispatch" ] \
+            || { [ "$CRON" = "17 5 * * *" ] && [ "$OFFSET" = "+0200" ]; } \
+            || { [ "$CRON" = "17 6 * * *" ] && [ "$OFFSET" = "+0100" ]; }; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Il est ${HOUR}h à Paris : exécution ignorée"
+            echo "Cron '$CRON' ignoré : Paris est en UTC$OFFSET, c'est l'autre déclenchement qui tombe à 7h17"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
