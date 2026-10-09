@@ -1,6 +1,6 @@
 import { and, eq, isNotNull } from 'drizzle-orm';
 import { db } from './client';
-import { users, profiles, offers, userOffers, runs } from './schema';
+import { users, profiles, offers, userOffers, runs, companies } from './schema';
 import type { JobDetail, ScoredOffer } from '../lib/types';
 import { normalizeUrl } from '../lib/url';
 
@@ -29,14 +29,14 @@ export async function getSeenUrls(userId: string): Promise<Set<string>> {
  * Insère les offres dans la table partagée. Si l'URL existe déjà (collectée pour
  * un autre utilisateur), on ne la duplique pas. Renvoie url → id pour toutes les offres.
  */
-export async function upsertOffers(jobs: JobDetail[], source: string): Promise<Map<string, string>> {
+export async function upsertOffers(jobs: JobDetail[]): Promise<Map<string, string>> {
   if (jobs.length === 0) return new Map();
 
   const rows = await db
     .insert(offers)
     .values(jobs.map(j => ({
       url: normalizeUrl(j.url),
-      source,
+      source: j.source,
       title: j.title,
       company: j.company,
       location: j.location,
@@ -51,6 +51,11 @@ export async function upsertOffers(jobs: JobDetail[], source: string): Promise<M
     .returning({ id: offers.id, url: offers.url });
 
   return new Map(rows.map(r => [r.url, r.id]));
+}
+
+/** Entreprises suivies par cet utilisateur. */
+export async function getCompanies(userId: string) {
+  return db.select().from(companies).where(eq(companies.userId, userId));
 }
 
 const VERDICT_TO_DB = { 'Postuler': 'postuler', 'À étudier': 'a_etudier', 'Ignorer': 'ignorer' } as const;

@@ -7,6 +7,7 @@ export interface JobDetail{
     company : string;
     location :string;
     url: string;
+    source: string; // 'adzuna', 'greenhouse', 'lever', 'ashby'
     qualifications:string;
 }
 

@@ -48,6 +48,7 @@ async function main() {
       userId: user.id,
       location: values.location!,
       excludeTerms: ['senior', 'lead', 'principal', 'staff', 'head of', 'director'],
+      includeTerms: ['data', 'machine learning', 'ml','ia','ai','llm','nlp','mlops'],
       cvText,
     })
     .onConflictDoUpdate({

@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "include_terms" text[] DEFAULT '{}' NOT NULL;

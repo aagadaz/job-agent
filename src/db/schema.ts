@@ -27,6 +27,7 @@ export const profiles = pgTable('profiles', {
   keywords: text('keywords').array().notNull().default([]),      // vide → déduits du CV par Claude
   location: text('location').notNull().default('Paris'),
   excludeTerms: text('exclude_terms').array().notNull().default([]), // ex. ['senior', 'lead']
+  includeTerms: text('include_terms').array().notNull().default([]), 
   rejectThreshold: integer('reject_threshold').notNull().default(35),
   cvText: text('cv_text'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

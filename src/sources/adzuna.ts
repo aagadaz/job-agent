@@ -62,6 +62,7 @@ function toJobDetail(job: AdzunaJob): JobDetail {
     company: job.company?.display_name ?? '',
     location: job.location?.display_name ?? '',
     url: job.redirect_url,
+    source: 'adzuna',
   };
 }
 
