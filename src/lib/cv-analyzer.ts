@@ -5,14 +5,20 @@ import { PDFParse } from 'pdf-parse';
 const MODEL = process.env.CLAUDE_MODEL ?? 'claude-haiku-4-5-20251001';
 const DEFAULT_KEYWORDS = ['data scientist', 'machine learning engineer', 'AI engineer'];
 
-export async function extractCVText(cvPath: string): Promise<string> {
-  const parser = new PDFParse({ data: fs.readFileSync(cvPath) });
+/** Extrait le texte d'un PDF déjà en mémoire (upload depuis l'interface). */
+export async function extractPdfText(data: Buffer | Uint8Array): Promise<string> {
+  const parser = new PDFParse({ data });
   try {
     const result = await parser.getText();
     return result.text;
   } finally {
     await parser.destroy();
   }
+}
+
+/** Extrait le texte d'un PDF sur disque (outils en ligne de commande). */
+export async function extractCVText(cvPath: string): Promise<string> {
+  return extractPdfText(fs.readFileSync(cvPath));
 }
 
 /**

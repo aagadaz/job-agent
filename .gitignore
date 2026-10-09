@@ -12,3 +12,8 @@ credentials.json
 debug.png
 _proposition-claude/
 cv.txt
+
+#Next.js (build et cache)
+.next/
+*.tsbuildinfo
+next-env.d.ts

@@ -59,7 +59,7 @@ jobs:
         run: npm run typecheck
 
       - name: Run agent
-        run: npm start
+        run: npm run worker
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}

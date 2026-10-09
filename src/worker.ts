@@ -25,7 +25,8 @@ async function collect(userId: string, keywords: string[], location: string): Pr
     ...companies.map(c => ({
       label: `${c.name} (${c.ats})`,
       // Les pages carrières publient des postes dans le monde entier : filtre géographique
-      run: async () => matchesLocation((await fetchCompanyJobs(c)) ?? [], location),
+      // Les gros ATS (Workday, SmartRecruiters) sont interrogés avec les mots-clés du profil
+      run: async () => matchesLocation((await fetchCompanyJobs(c, { keywords })) ?? [], location),
     })),
   ];
 

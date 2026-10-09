@@ -4,7 +4,10 @@ import {
 } from 'drizzle-orm/pg-core';
 
 // ─── Énumérations : des ensembles fermés de valeurs, vérifiés par PostgreSQL ───
-export const atsEnum = pgEnum('ats', ['greenhouse', 'lever', 'ashby', 'smartrecruiters']);
+// Ajouter une valeur = migration "ALTER TYPE ... ADD VALUE" (toujours en fin de liste)
+export const atsEnum = pgEnum('ats', [
+  'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'workable', 'recruitee',
+]);
 export const verdictEnum = pgEnum('verdict', ['postuler', 'a_etudier', 'ignorer']);
 export const statusEnum = pgEnum('application_status', [
   'a_traiter', 'postule', 'entretien', 'refuse', 'abandonne',
@@ -30,6 +33,7 @@ export const profiles = pgTable('profiles', {
   includeTerms: text('include_terms').array().notNull().default([]), 
   rejectThreshold: integer('reject_threshold').notNull().default(35),
   cvText: text('cv_text'),
+  sheetId: text('sheet_id'), // Google Sheet de suivi des candidatures (facultatif)
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

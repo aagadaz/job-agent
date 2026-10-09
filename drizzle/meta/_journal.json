@@ -15,6 +15,13 @@
       "when": 1791557113133,
       "tag": "0001_goofy_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791562603262,
+      "tag": "0002_quick_bedlam",
+      "breakpoints": true
     }
   ]
 }
