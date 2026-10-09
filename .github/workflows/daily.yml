@@ -54,8 +54,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        env:
-          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' # le scraper APEC n'est plus utilisé
 
       - name: Typecheck
         run: npm run typecheck
@@ -63,10 +61,7 @@ jobs:
       - name: Run agent
         run: npm start
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
-          CV_TEXT: ${{ secrets.CV_TEXT }}
-          SCORE_REJECT_THRESHOLD: '35'
