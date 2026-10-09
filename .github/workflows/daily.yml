@@ -7,10 +7,22 @@ on:
     # celui qui correspond à la saison. Minute 17 : on évite le pic de charge du début d'heure.
     - cron: '17 5 * * *'
     - cron: '17 6 * * *'
-  workflow_dispatch: # bouton "Run workflow" pour lancer à la main
+  workflow_dispatch: # lancement à la main : bouton "Run workflow" de GitHub, ou bouton de l'interface
+    inputs:
+      user_id:
+        description: "UUID de l'utilisateur à traiter (vide = tous)"
+        required: false
+        default: ''
+      run_id:
+        description: "UUID de la ligne runs créée par l'interface (facultatif)"
+        required: false
+        default: ''
 
 concurrency:
-  group: job-agent      # jamais deux exécutions en parallèle
+  # Une file par utilisateur pour les lancements manuels, une file "all" pour le cron :
+  # GitHub ne garde qu'UNE exécution en attente par groupe, un groupe unique ferait
+  # s'annuler les clics de deux utilisateurs différents.
+  group: job-agent-${{ inputs.user_id || 'all' }}
   cancel-in-progress: false
 
 permissions:
@@ -65,3 +77,7 @@ jobs:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          # Passés par variables d'environnement, JAMAIS interpolés dans un script "run:"
+          # (sinon une valeur malveillante deviendrait une commande shell : injection)
+          ONLY_USER_ID: ${{ inputs.user_id }}
+          RUN_ID: ${{ inputs.run_id }}

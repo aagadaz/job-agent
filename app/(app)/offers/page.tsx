@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { RunSearchButton } from '../../components/RunSearchButton';
 import { StatusSelect } from '../../components/StatusSelect';
 import { STATUSES, lastRun, listOffers, type ApplicationStatus } from '@/db/dashboard';
 import { requireUserId } from '@/lib/session';
@@ -34,6 +35,9 @@ export default async function OffersPage({
               {run.status === 'error' ? `échec : ${run.error}` : run.status === 'running' ? 'en cours' : 'réussie'}
             </p>
           )}
+          <div className="mt-2">
+            <RunSearchButton running={run?.status === 'running' && Date.now() - run.startedAt.getTime() < 30 * 60_000} />
+          </div>
         </div>
         <nav className="flex gap-2 text-sm">
           <Link href="/offers" className="rounded-md border bg-white px-3 py-1">Toutes</Link>

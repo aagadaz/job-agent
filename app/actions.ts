@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import {
-  STATUSES, deleteCompany, getApplicationForSheet, insertCompany, saveEncryptedKey, saveProfile, saveSheetId, setOfferStatus,
+  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getUserWithProfile, lastRun, insertCompany, saveEncryptedKey, saveProfile, saveSheetId, setOfferStatus,
 } from '@/db/dashboard';
 import { encrypt, maskSecret } from '@/lib/crypto';
 import { extractPdfText } from '@/lib/cv-analyzer';
@@ -178,4 +178,58 @@ export async function updateSheet(_prev: ActionResult | null, form: FormData): P
   await saveSheetId(userId, sheetId);
   revalidatePath('/profile');
   return { ok: true, message: 'Sheet connecté : onglet « Candidatures » prêt.' };
+}
+
+// ─── Recherche manuelle ───
+const COOLDOWN_MS = 10 * 60_000;      // un lancement manuel toutes les 10 min au plus
+const STALE_RUN_MS = 30 * 60_000;     // au-delà, une exécution « en cours » est considérée morte
+
+export async function triggerSearch(_prev: ActionResult | null): Promise<ActionResult> {
+  const userId = await requireUserId();
+
+  // 1) Garde-fous AVANT de dépenser quoi que ce soit (minutes GitHub, crédits Claude)
+  const row = await getUserWithProfile(userId);
+  if (!row?.user.anthropicKeyEncrypted || !row.profile?.cvText) {
+    return { ok: false, message: 'Complète ton profil (CV + clé Claude) avant de lancer une recherche.' };
+  }
+  const previous = await lastRun(userId);
+  if (previous) {
+    const age = Date.now() - previous.startedAt.getTime();
+    if (previous.status === 'running' && age < STALE_RUN_MS) {
+      return { ok: false, message: 'Une recherche est déjà en cours.' };
+    }
+    if (age < COOLDOWN_MS) {
+      const wait = Math.ceil((COOLDOWN_MS - age) / 60_000);
+      return { ok: false, message: `Dernière recherche trop récente : réessaie dans ${wait} min.` };
+    }
+  }
+
+  const token = process.env.GITHUB_DISPATCH_TOKEN;
+  const repo = process.env.GITHUB_REPO; // ex. "aagadaz/job-agent"
+  if (!token || !repo) return { ok: false, message: 'Lancement manuel non configuré (GITHUB_DISPATCH_TOKEN / GITHUB_REPO).' };
+
+  // 2) La ligne "runs" est créée tout de suite : statut visible et anti double-clic immédiats
+  const runId = await createManualRun(userId);
+
+  // 3) Déclenchement du workflow (API REST GitHub : 204 No Content si accepté)
+  const res = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/daily.yml/dispatches`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify({ ref: 'main', inputs: { user_id: userId, run_id: runId } }),
+    signal: AbortSignal.timeout(15_000),
+  }).catch(() => null);
+
+  if (!res || res.status !== 204) {
+    const reason = res ? `GitHub a répondu HTTP ${res.status}` : 'GitHub injoignable';
+    await failRun(userId, runId, `Lancement manuel impossible : ${reason}`);
+    revalidatePath('/offers');
+    return { ok: false, message: `Lancement impossible (${reason}).` };
+  }
+
+  revalidatePath('/offers');
+  return { ok: true, message: 'Recherche lancée : compte 3 à 6 minutes, puis recharge la page.' };
 }

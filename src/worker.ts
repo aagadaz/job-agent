@@ -68,14 +68,35 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   };
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Variable d'environnement facultative qui doit être un UUID (vide = absente). */
+function optionalUuid(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  if (!UUID.test(value)) throw new Error(`${name} n'est pas un UUID valide`);
+  return value;
+}
+
 async function main() {
-  const activeUsers = await getActiveUsers();
+  // Lancement manuel (bouton de l'interface) : un seul utilisateur, et la ligne "runs"
+  // déjà créée par l'interface au moment du clic. Lancement planifié : tout le monde.
+  const onlyUserId = optionalUuid('ONLY_USER_ID');
+  const presetRunId = optionalUuid('RUN_ID');
+
+  const activeUsers = await getActiveUsers(onlyUserId);
+  if (onlyUserId && activeUsers.length === 0) {
+    const message = 'Profil incomplet : CV ou clé Claude manquant';
+    // On clôt la ligne créée au clic, sinon l'interface afficherait « en cours » indéfiniment
+    if (presetRunId) await finishRun(presetRunId, { status: 'error', error: message });
+    throw new Error(`${message} (utilisateur ${onlyUserId})`);
+  }
   console.log(`👥 ${activeUsers.length} utilisateur(s) actif(s)\n`);
   let failures = 0;
 
   for (const entry of activeUsers) {
     console.log(`▶ ${entry.user.email}`);
-    const runId = await startRun(entry.user.id);
+    const runId = presetRunId ?? (await startRun(entry.user.id));
     try {
       const stats = await processUser(entry);
       await finishRun(runId, { status: 'success', stats });

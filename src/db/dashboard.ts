@@ -136,6 +136,20 @@ export async function getApplicationForSheet(userId: string, offerId: string) {
 }
 
 // ─── Dernière exécution du worker ───
+/** Crée la ligne "runs" dès le clic : l'interface affiche « en cours » sans attendre GitHub. */
+export async function createManualRun(userId: string): Promise<string> {
+  const [run] = await db.insert(runs).values({ userId }).returning({ id: runs.id });
+  return run.id;
+}
+
+/** Clôt en erreur une ligne créée au clic quand le déclenchement GitHub a échoué. */
+export async function failRun(userId: string, runId: string, error: string): Promise<void> {
+  await db
+    .update(runs)
+    .set({ status: 'error', error, finishedAt: new Date() })
+    .where(and(eq(runs.id, runId), eq(runs.userId, userId)));
+}
+
 export async function lastRun(userId: string) {
   const [run] = await db.select().from(runs).where(eq(runs.userId, userId)).orderBy(desc(runs.startedAt)).limit(1);
   return run;

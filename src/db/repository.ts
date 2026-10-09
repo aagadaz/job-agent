@@ -6,13 +6,22 @@ import { normalizeUrl } from '../lib/url';
 
 // Toutes les requêtes SQL du worker sont ici : le reste du code ne parle jamais SQL.
 
-/** Utilisateurs prêts pour le worker : un profil avec CV ET une clé Claude enregistrée. */
-export async function getActiveUsers() {
+/**
+ * Utilisateurs prêts pour le worker : un profil avec CV ET une clé Claude enregistrée.
+ * `onlyUserId` : lancement manuel depuis l'interface, pour un seul utilisateur.
+ */
+export async function getActiveUsers(onlyUserId?: string) {
   return db
     .select({ user: users, profile: profiles })
     .from(users)
     .innerJoin(profiles, eq(profiles.userId, users.id))
-    .where(and(isNotNull(users.anthropicKeyEncrypted), isNotNull(profiles.cvText)));
+    .where(
+      and(
+        isNotNull(users.anthropicKeyEncrypted),
+        isNotNull(profiles.cvText),
+        onlyUserId ? eq(users.id, onlyUserId) : undefined, // and() ignore les undefined
+      ),
+    );
 }
 
 /** URLs des offres déjà vues par CET utilisateur (retenues ou écartées). */
