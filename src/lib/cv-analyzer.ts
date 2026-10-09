@@ -1,19 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk';
 import fs from 'fs';
-import { PDFParse } from 'pdf-parse';
 
 const MODEL = process.env.CLAUDE_MODEL ?? 'claude-haiku-4-5-20251001';
 const DEFAULT_KEYWORDS = ['data scientist', 'machine learning engineer', 'AI engineer'];
 
-/** Extrait le texte d'un PDF déjà en mémoire (upload depuis l'interface). */
+/**
+ * Extrait le texte d'un PDF déjà en mémoire (upload depuis l'interface).
+ * unpdf = pdf.js empaqueté pour le serverless (pas de worker, pas de module natif).
+ * Import DYNAMIQUE : la bibliothèque n'est chargée qu'au moment d'extraire un PDF.
+ * Si elle posait problème, seul l'upload de CV échouerait, pas toutes les pages.
+ */
 export async function extractPdfText(data: Buffer | Uint8Array): Promise<string> {
-  const parser = new PDFParse({ data });
-  try {
-    const result = await parser.getText();
-    return result.text;
-  } finally {
-    await parser.destroy();
-  }
+  const { extractText, getDocumentProxy } = await import('unpdf');
+  const pdf = await getDocumentProxy(new Uint8Array(data)); // copie : pdf.js "détache" le buffer reçu
+  const { text } = await extractText(pdf, { mergePages: true });
+  return text;
 }
 
 /** Extrait le texte d'un PDF sur disque (outils en ligne de commande). */
