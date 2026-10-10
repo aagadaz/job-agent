@@ -221,5 +221,5 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
   }
 
   revalidatePath('/offers');
-  return { ok: true, message: 'Recherche lancée : compte 3 à 6 minutes, puis recharge la page.' };
+  return { ok: true, message: 'Recherche lancée : 3 à 6 minutes. La page se mettra à jour toute seule.' };
 }

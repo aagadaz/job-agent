@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { RunSearchButton } from '../../components/RunSearchButton';
+import { RunWatcher } from '../../components/RunWatcher';
+import { summarizeRun, type RunSnapshot } from '@/lib/run-summary';
 import { StatusSelect } from '../../components/StatusSelect';
 import { STATUSES, listOffers, type ApplicationStatus } from '@/db/dashboard';
 import { getReconciledLastRun } from '@/lib/run-status';
@@ -25,15 +27,21 @@ export default async function OffersPage({
 
   const [rows, run] = await Promise.all([listOffers(userId, { showRejected, status }), getReconciledLastRun(userId)]);
 
+  // Ce qui part vers le composant client : des données simples et sérialisables (pas de Date)
+  const snapshot: RunSnapshot | null = run
+    ? { id: run.id, status: run.status, error: run.error, stats: run.stats }
+    : null;
+
   return (
     <div className="space-y-4">
+      <RunWatcher run={snapshot} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Offres ({rows.length})</h1>
           {run && (
             <p className="text-sm text-gray-500">
               Dernière recherche : {run.startedAt.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} ·{' '}
-              {run.status === 'error' ? `échec : ${run.error}` : run.status === 'running' ? 'en cours' : 'réussie'}
+              {summarizeRun(snapshot!).text}
             </p>
           )}
           <div className="mt-2">
