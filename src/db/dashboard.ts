@@ -16,9 +16,30 @@ const _everyStatusHasALabel: Record<ApplicationStatus, string> = STATUS_LABELS;
 void _everyStatusHasALabel;
 
 // ─── Comptes ───
-export async function ensureUser(email: string, name: string | null): Promise<void> {
-  await db.insert(users).values({ email, name }).onConflictDoNothing();
+/**
+ * Admet un utilisateur à la connexion :
+ * - déjà inscrit → 'existing' (toujours accepté, même si le plafond est atteint) ;
+ * - nouveau et places libres → inscrit, 'created' ;
+ * - nouveau et plafond atteint → 'full', rien n'est créé.
+ *
+ * « Compter puis insérer » n'est pas atomique : deux inscriptions simultanées à 3/4 verraient
+ * toutes deux une place libre et on finirait à 5. Le verrou consultatif (advisory lock) de
+ * transaction sérialise les inscriptions : la 2e attend que la 1re ait fini, puis recompte.
+ */
+export async function admitUser(email: string, name: string | null, maxUsers: number): Promise<'existing' | 'created' | 'full'> {
+  return db.transaction(async tx => {
+    const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (existing) return 'existing';
+
+    await tx.execute(sql`select pg_advisory_xact_lock(${SIGNUP_LOCK_ID})`); // relâché au COMMIT
+    const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(users);
+    if (n >= maxUsers) return 'full';
+
+    await tx.insert(users).values({ email, name }).onConflictDoNothing();
+    return 'created';
+  });
 }
+const SIGNUP_LOCK_ID = 726_001; // identifiant arbitraire, propre à ce verrou
 
 export async function findUserIdByEmail(email: string): Promise<string | undefined> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
