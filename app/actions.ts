@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import {
-  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getUserWithProfile, insertCompany, saveEncryptedKey, saveProfile, saveSheetId, setOfferStatus,
+  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getUserWithProfile, insertCompany, saveEncryptedKey, saveProfile, saveSheetId, setOfferDismissed, setOfferStatus,
 } from '@/db/dashboard';
 import { encrypt, maskSecret } from '@/lib/crypto';
 import { extractPdfText } from '@/lib/cv-analyzer';
@@ -168,6 +168,12 @@ export async function removeCompany(companyId: string): Promise<void> {
   const userId = await requireUserId();
   await deleteCompany(userId, z.string().uuid().parse(companyId));
   revalidatePath('/companies');
+}
+
+export async function dismissOffer(offerId: string, dismissed: boolean): Promise<void> {
+  const userId = await requireUserId();
+  await setOfferDismissed(userId, z.string().uuid().parse(offerId), z.boolean().parse(dismissed));
+  revalidatePath('/offers');
 }
 
 export async function changeStatus(offerId: string, status: string): Promise<ActionResult> {

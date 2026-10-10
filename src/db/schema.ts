@@ -76,6 +76,9 @@ export const userOffers = pgTable('user_offers', {
   missingSkills: text('missing_skills').array().notNull().default([]),
   rejected: boolean('rejected').notNull().default(false), // score <= seuil : remplace l'onglet "rejetees"
   status: statusEnum('status').notNull().default('a_traiter'),
+  // Suppression LOGIQUE : la ligne reste (le worker sait que l'offre est déjà vue et ne la
+  // re-note pas), elle est seulement masquée du fil. null = visible.
+  dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   primaryKey({ columns: [t.userId, t.offerId] }), // une ligne par (utilisateur, offre), pas plus

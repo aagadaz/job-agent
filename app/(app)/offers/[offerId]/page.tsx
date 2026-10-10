@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { z } from 'zod';
 import { ScoreBadge } from '../../../components/ScoreBadge';
+import { DismissButton } from '../../../components/DismissButton';
 import { StatusSelect } from '../../../components/StatusSelect';
 import { getOfferDetail } from '@/db/dashboard';
 import { requireUserId } from '@/lib/session';
@@ -46,7 +47,10 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
             Voir l&apos;annonce originale ↗
           </a>
         </div>
-        <StatusSelect offerId={offer.offerId} status={offer.status} />
+        <div className="flex flex-col items-end gap-2">
+          <StatusSelect offerId={offer.offerId} status={offer.status} />
+          <DismissButton offerId={offer.offerId} dismissed={offer.dismissedAt !== null} redirectTo="/offers" />
+        </div>
       </header>
 
       {(offer.justification || offer.strengths.length > 0 || offer.missingSkills.length > 0) && (

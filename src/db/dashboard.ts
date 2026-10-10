@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from './client';
 import { users, profiles, companies, offers, userOffers, runs } from './schema';
 import { STATUS_LABELS } from '../lib/status';
@@ -82,8 +82,10 @@ export async function deleteCompany(userId: string, companyId: string): Promise<
 }
 
 // ─── Offres ───
-export async function listOffers(userId: string, opts: { showRejected: boolean; status?: ApplicationStatus }) {
+export async function listOffers(userId: string, opts: { showRejected: boolean; status?: ApplicationStatus; dismissed?: boolean }) {
   const conditions = [eq(userOffers.userId, userId)];
+  // Corbeille : seulement les supprimées ; sinon, jamais les supprimées
+  conditions.push(opts.dismissed ? isNotNull(userOffers.dismissedAt) : isNull(userOffers.dismissedAt));
   if (!opts.showRejected) conditions.push(eq(userOffers.rejected, false));
   if (opts.status) conditions.push(eq(userOffers.status, opts.status));
 
@@ -109,6 +111,14 @@ export async function listOffers(userId: string, opts: { showRejected: boolean; 
     .where(and(...conditions))
     .orderBy(sql`${userOffers.score} desc nulls last`, desc(userOffers.createdAt))
     .limit(300);
+}
+
+/** Masque (dismissed = true) ou restaure une offre du fil — seulement les siennes. */
+export async function setOfferDismissed(userId: string, offerId: string, dismissed: boolean): Promise<void> {
+  await db
+    .update(userOffers)
+    .set({ dismissedAt: dismissed ? new Date() : null })
+    .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
 }
 
 export async function setOfferStatus(userId: string, offerId: string, status: ApplicationStatus): Promise<void> {
@@ -139,6 +149,7 @@ export async function getOfferDetail(userId: string, offerId: string) {
       strengths: userOffers.strengths,
       missingSkills: userOffers.missingSkills,
       status: userOffers.status,
+      dismissedAt: userOffers.dismissedAt,
     })
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))

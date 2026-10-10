@@ -22,6 +22,13 @@
       "when": 1791562603262,
       "tag": "0002_quick_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791630377611,
+      "tag": "0003_quiet_ender_wiggin",
+      "breakpoints": true
     }
   ]
 }

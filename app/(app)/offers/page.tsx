@@ -3,6 +3,7 @@ import { RunSearchButton } from '../../components/RunSearchButton';
 import { RunWatcher } from '../../components/RunWatcher';
 import { summarizeRun, type RunSnapshot } from '@/lib/run-summary';
 import { ScoreBadge } from '../../components/ScoreBadge';
+import { DismissButton } from '../../components/DismissButton';
 import { StatusSelect } from '../../components/StatusSelect';
 import { STATUSES, listOffers, type ApplicationStatus } from '@/db/dashboard';
 import { getReconciledLastRun } from '@/lib/run-status';
@@ -11,15 +12,16 @@ import { requireUserId } from '@/lib/session';
 export default async function OffersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rejected?: string; status?: string }>;
+  searchParams: Promise<{ rejected?: string; status?: string; dismissed?: string }>;
 }) {
   const userId = await requireUserId();
   const params = await searchParams;
   const showRejected = params.rejected === '1';
+  const dismissed = params.dismissed === '1'; // vue « Corbeille »
   // Valeur venant de l'URL : on ne la garde que si elle fait partie des statuts connus
   const status = STATUSES.find(s => s === params.status) as ApplicationStatus | undefined;
 
-  const [rows, run] = await Promise.all([listOffers(userId, { showRejected, status }), getReconciledLastRun(userId)]);
+  const [rows, run] = await Promise.all([listOffers(userId, { showRejected: showRejected || dismissed, status, dismissed }), getReconciledLastRun(userId)]);
 
   // Ce qui part vers le composant client : des données simples et sérialisables (pas de Date)
   const snapshot: RunSnapshot | null = run
@@ -31,7 +33,7 @@ export default async function OffersPage({
       <RunWatcher run={snapshot} />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Offres ({rows.length})</h1>
+          <h1 className="text-lg font-semibold">{dismissed ? 'Corbeille' : 'Offres'} ({rows.length})</h1>
           {run && (
             <p className="text-sm text-gray-500">
               Dernière recherche : {run.startedAt.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} ·{' '}
@@ -49,12 +51,17 @@ export default async function OffersPage({
           <Link href={showRejected ? '/offers' : '/offers?rejected=1'} className="rounded-md border bg-white px-3 py-1">
             {showRejected ? 'Masquer les écartées' : 'Voir les écartées'}
           </Link>
+          <Link href={dismissed ? '/offers' : '/offers?dismissed=1'} className="rounded-md border bg-white px-3 py-1">
+            {dismissed ? '← Retour au fil' : 'Corbeille'}
+          </Link>
         </nav>
       </div>
 
       {rows.length === 0 ? (
         <p className="rounded-xl border bg-white p-6 text-sm text-gray-500">
-          Aucune offre pour l&apos;instant. Vérifie ton profil (CV et clé Claude) : la recherche tourne chaque matin à 7h17.
+          {dismissed
+            ? 'La corbeille est vide.'
+            : "Aucune offre pour l'instant. Vérifie ton profil (CV et clé Claude) : la recherche tourne chaque matin à 7h17."}
         </p>
       ) : (
         <ul className="space-y-3">
@@ -84,7 +91,10 @@ export default async function OffersPage({
                     ))}
                   </div>
                 </div>
-                <StatusSelect offerId={o.offerId} status={o.status} />
+                <div className="flex flex-col items-end gap-2">
+                  <StatusSelect offerId={o.offerId} status={o.status} />
+                  <DismissButton offerId={o.offerId} dismissed={dismissed} />
+                </div>
               </div>
             </li>
           ))}
