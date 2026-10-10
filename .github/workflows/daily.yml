@@ -1,4 +1,7 @@
 name: Daily job search
+# Titre de chaque exécution. Pour un lancement depuis l'interface, il contient l'id de la ligne
+# "runs" : l'interface retrouve ainsi SON run via l'API GitHub et peut en lire l'issue.
+run-name: ${{ inputs.run_id && format('Recherche manuelle {0}', inputs.run_id) || 'Daily job search' }}
 
 on:
   schedule:

@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { RunSearchButton } from '../../components/RunSearchButton';
 import { StatusSelect } from '../../components/StatusSelect';
-import { STATUSES, lastRun, listOffers, type ApplicationStatus } from '@/db/dashboard';
+import { STATUSES, listOffers, type ApplicationStatus } from '@/db/dashboard';
+import { getReconciledLastRun } from '@/lib/run-status';
 import { requireUserId } from '@/lib/session';
 
 function scoreColor(score: number | null): string {
@@ -22,7 +23,7 @@ export default async function OffersPage({
   // Valeur venant de l'URL : on ne la garde que si elle fait partie des statuts connus
   const status = STATUSES.find(s => s === params.status) as ApplicationStatus | undefined;
 
-  const [rows, run] = await Promise.all([listOffers(userId, { showRejected, status }), lastRun(userId)]);
+  const [rows, run] = await Promise.all([listOffers(userId, { showRejected, status }), getReconciledLastRun(userId)]);
 
   return (
     <div className="space-y-4">
@@ -36,7 +37,7 @@ export default async function OffersPage({
             </p>
           )}
           <div className="mt-2">
-            <RunSearchButton running={run?.status === 'running' && Date.now() - run.startedAt.getTime() < 30 * 60_000} />
+            <RunSearchButton running={run?.status === 'running'} />
           </div>
         </div>
         <nav className="flex gap-2 text-sm">

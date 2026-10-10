@@ -113,8 +113,14 @@ async function main() {
 }
 
 main()
-  .catch(err => {
+  .catch(async err => {
     console.error('ERREUR FATALE :', err);
     process.exitCode = 1;
+    // Best effort : clore la ligne créée au clic. Échouera si c'est la base elle-même qui est
+    // en cause ; l'interface s'en apercevra alors via l'API GitHub (src/lib/run-status.ts).
+    const runId = process.env.RUN_ID?.trim();
+    if (runId && UUID.test(runId)) {
+      await finishRun(runId, { status: 'error', error: (err as Error).message.slice(0, 500) }).catch(() => {});
+    }
   })
   .finally(() => pool.end());
