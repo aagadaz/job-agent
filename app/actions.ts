@@ -198,7 +198,9 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
     if (previous.status === 'running' && age < STALE_RUN_MS) {
       return { ok: false, message: 'Une recherche est déjà en cours.' };
     }
-    if (age < COOLDOWN_MS) {
+    // Le délai ne s'applique qu'après une recherche RÉUSSIE : après un échec (lancement refusé,
+    // worker en erreur), on doit pouvoir réessayer tout de suite une fois la cause corrigée.
+    if (previous.status === 'success' && age < COOLDOWN_MS) {
       const wait = Math.ceil((COOLDOWN_MS - age) / 60_000);
       return { ok: false, message: `Dernière recherche trop récente : réessaie dans ${wait} min.` };
     }
