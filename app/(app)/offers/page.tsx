@@ -2,17 +2,11 @@ import Link from 'next/link';
 import { RunSearchButton } from '../../components/RunSearchButton';
 import { RunWatcher } from '../../components/RunWatcher';
 import { summarizeRun, type RunSnapshot } from '@/lib/run-summary';
+import { ScoreBadge } from '../../components/ScoreBadge';
 import { StatusSelect } from '../../components/StatusSelect';
 import { STATUSES, listOffers, type ApplicationStatus } from '@/db/dashboard';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { requireUserId } from '@/lib/session';
-
-function scoreColor(score: number | null): string {
-  if (score === null) return 'bg-gray-100 text-gray-600';
-  if (score >= 70) return 'bg-green-100 text-green-800';
-  if (score >= 50) return 'bg-amber-100 text-amber-800';
-  return 'bg-gray-100 text-gray-700';
-}
 
 export default async function OffersPage({
   searchParams,
@@ -67,12 +61,14 @@ export default async function OffersPage({
           {rows.map(o => (
             <li key={o.offerId} className={`rounded-xl border bg-white p-4 ${o.rejected ? 'opacity-60' : ''}`}>
               <div className="flex flex-wrap items-start gap-3">
-                <span className={`rounded-md px-2 py-1 text-sm font-semibold ${scoreColor(o.score)}`}>
-                  {o.score ?? '—'}
-                </span>
+                <ScoreBadge score={o.score} />
                 <div className="min-w-0 flex-1">
-                  <a href={o.url} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
+                  {/* Le titre ouvre la fiche complète ; ↗ ouvre directement l'annonce d'origine */}
+                  <Link href={`/offers/${o.offerId}`} className="font-medium hover:underline">
                     {o.title}
+                  </Link>
+                  <a href={o.url} target="_blank" rel="noopener noreferrer" title="Annonce originale" className="ml-2 text-sm text-gray-400 hover:text-gray-700">
+                    ↗
                   </a>
                   <p className="text-sm text-gray-600">
                     {o.company} · {o.location || 'Lieu non précisé'} · {o.source}

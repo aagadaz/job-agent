@@ -116,6 +116,34 @@ export async function setOfferStatus(userId: string, offerId: string, status: Ap
     .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
 }
 
+/** Une offre complète, seulement si elle appartient à CET utilisateur (sinon undefined). */
+export async function getOfferDetail(userId: string, offerId: string) {
+  const [row] = await db
+    .select({
+      offerId: offers.id,
+      title: offers.title,
+      company: offers.company,
+      location: offers.location,
+      salary: offers.salary,
+      employmentType: offers.employmentType,
+      datePosted: offers.datePosted,
+      description: offers.description,
+      qualifications: offers.qualifications,
+      url: offers.url,
+      source: offers.source,
+      score: userOffers.score,
+      verdict: userOffers.verdict,
+      justification: userOffers.justification,
+      strengths: userOffers.strengths,
+      missingSkills: userOffers.missingSkills,
+      status: userOffers.status,
+    })
+    .from(userOffers)
+    .innerJoin(offers, eq(offers.id, userOffers.offerId))
+    .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
+  return row;
+}
+
 /** Ce qu'il faut pour écrire la ligne du Sheet — toujours filtré par userId. */
 export async function getApplicationForSheet(userId: string, offerId: string) {
   const [row] = await db
