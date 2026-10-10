@@ -1,6 +1,7 @@
 import NextAuth, { type DefaultSession } from 'next-auth';
 import Google from 'next-auth/providers/google';
 import { admitUser, findUserIdByEmail } from './db/dashboard';
+import { getSettings } from './db/settings';
 
 // La session expose l'id de l'utilisateur en base (pas seulement son e-mail).
 declare module 'next-auth' {
@@ -9,11 +10,6 @@ declare module 'next-auth' {
   }
 }
 
-/** Nombre maximum de comptes (variable MAX_USERS, 4 par défaut) : protège les quotas partagés. */
-function maxUsers(): number {
-  const n = Number(process.env.MAX_USERS ?? 4);
-  return Number.isInteger(n) && n > 0 ? n : 4;
-}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [Google], // lit AUTH_GOOGLE_ID et AUTH_GOOGLE_SECRET
@@ -25,7 +21,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user }) {
       const email = user.email?.toLowerCase();
       if (!email) return false;
-      const result = await admitUser(email, user.name ?? null, maxUsers());
+      // Réglages lus en base à chaque connexion (modifiables depuis /admin) ;
+      // inscriptions fermées = plafond à 0 : les comptes existants entrent toujours.
+      const { signupOpen, maxUsers } = await getSettings();
+      const result = await admitUser(email, user.name ?? null, signupOpen ? maxUsers : 0);
       return result === 'full' ? '/login?error=full' : true;
     },
     // 2. À la connexion, on mémorise l'id en base dans le jeton

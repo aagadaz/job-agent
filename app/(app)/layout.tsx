@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { auth, signOut } from '@/auth';
-import { requireUserId } from '@/lib/session';
+import { isAdmin, requireUserId } from '@/lib/session';
 
 const NAV = [
   { href: '/offers', label: 'Offres' },
@@ -11,6 +11,7 @@ const NAV = [
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   await requireUserId(); // toutes les pages de ce groupe exigent une connexion
   const session = await auth();
+  const admin = await isAdmin(); // le lien n'est rendu que pour un admin (la page se protège elle-même)
 
   return (
     <>
@@ -22,6 +23,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               {item.label}
             </Link>
           ))}
+          {admin && (
+            <Link href="/admin" className="text-gray-600 hover:text-gray-900">
+              Admin
+            </Link>
+          )}
           <form
             className="ml-auto flex items-center gap-3"
             action={async () => {

@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { auth } from '../auth';
 
 /**
@@ -19,4 +19,14 @@ export async function isAdmin(): Promise<boolean> {
   const email = (await auth())?.user?.email?.toLowerCase();
   const admins = (process.env.ADMIN_EMAILS ?? '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
   return !!email && admins.includes(email);
+}
+
+/**
+ * Garde des pages et actions /admin. Un non-admin reçoit une 404 (et non une 403) :
+ * on ne révèle même pas que la page existe.
+ */
+export async function requireAdmin(): Promise<string> {
+  const userId = await requireUserId();
+  if (!(await isAdmin())) notFound();
+  return userId;
 }

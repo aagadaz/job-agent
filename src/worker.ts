@@ -13,10 +13,9 @@ import { scoreOffers } from './lib/scorer';
 import type { JobDetail } from './lib/types';
 import { normalizeUrl } from './lib/url';
 import { mapPool } from './lib/concurrency';
+import { getSettings } from './db/settings';
 import { fetchAdzunaOffers } from './sources/adzuna';
 import { fetchCompanyJobs } from './sources/ats';
-
-const MAX_SCORED_PER_RUN = 150; // ≈ 5 min de notation et quelques centimes de Claude Haiku
 
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
 
@@ -87,7 +86,8 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
 
   // Plafond par exécution : le 1er passage sur 100 entreprises peut ramener des centaines
   // d'offres. Le reste sera noté aux exécutions suivantes (pas encore "vu", donc toujours frais).
-  const batch = fresh.slice(0, MAX_SCORED_PER_RUN);
+  const { maxScoredPerRun } = await getSettings(); // réglable depuis /admin
+  const batch = fresh.slice(0, maxScoredPerRun);
   if (fresh.length > batch.length) console.log(`   ⏳ ${fresh.length - batch.length} offres reportées à la prochaine exécution`);
   const offerIds = await upsertOffers(batch);
   const scored = await scoreOffers(client, cvText, batch);

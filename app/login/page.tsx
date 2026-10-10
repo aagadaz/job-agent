@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         {error && (
           <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
             {error === 'full'
-              ? 'Les inscriptions sont complètes pour le moment. Réessaie plus tard.'
+              ? 'Les inscriptions sont fermées ou complètes pour le moment. Réessaie plus tard.'
               : 'La connexion a échoué. Réessaie.'}
           </p>
         )}

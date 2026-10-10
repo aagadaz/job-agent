@@ -107,3 +107,12 @@ export type Company = typeof companies.$inferSelect;
 export type Offer = typeof offers.$inferSelect;
 export type NewOffer = typeof offers.$inferInsert;
 export type UserOffer = typeof userOffers.$inferSelect;
+
+// ─── Réglages de la plateforme (modifiables depuis /admin, sans redéployer) ───
+// Une ligne par réglage : clé + valeur JSON. Les valeurs par défaut vivent dans le code
+// (src/db/settings.ts) : une table vide = comportement par défaut.
+export const appSettings = pgTable('app_settings', {
+  key: text('key').primaryKey(),
+  value: jsonb('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
