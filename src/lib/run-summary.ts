@@ -4,13 +4,15 @@
 export interface RunSnapshot {
   id: string;
   status: 'running' | 'success' | 'error';
-  error: string | null;
+  error: string | null;    // message POUR L'UTILISATEUR (déjà traduit côté serveur)
+  details?: string | null; // erreur technique brute : seulement pour les administrateurs
   stats: { fetched?: number; new?: number; kept?: number; rejected?: number } | null;
 }
 
 export interface RunSummary {
   tone: 'success' | 'info' | 'error';
   text: string;
+  details?: string | null;
 }
 
 // Singulier et pluriel fournis tous les deux : en français, plusieurs mots s'accordent
@@ -18,7 +20,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : 
 
 export function summarizeRun(run: RunSnapshot): RunSummary {
   if (run.status === 'running') return { tone: 'info', text: 'Recherche en cours…' };
-  if (run.status === 'error') return { tone: 'error', text: `Échec : ${run.error ?? 'erreur inconnue'}` };
+  if (run.status === 'error') {
+    return { tone: 'error', text: run.error ?? 'La recherche a échoué.', details: run.details };
+  }
 
   const fresh = run.stats?.new ?? 0;
   const kept = run.stats?.kept ?? 0;

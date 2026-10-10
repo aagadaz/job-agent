@@ -44,9 +44,15 @@ export function RunWatcher({ run }: { run: RunSnapshot | null }) {
   if (!notice) return null;
   return (
     <div role="status" className={`flex items-start justify-between gap-4 rounded-lg border px-4 py-3 text-sm ${TONES[notice.tone]}`}>
-      <span>
-        <b>Recherche terminée.</b> {notice.text}
-      </span>
+      <div>
+        <b>{notice.tone === 'error' ? 'La recherche a échoué.' : 'Recherche terminée.'}</b> {notice.text}
+        {notice.details && (
+          <details className="mt-1 text-xs opacity-70">
+            <summary className="cursor-pointer">Détails techniques (admin)</summary>
+            <pre className="whitespace-pre-wrap break-all">{notice.details}</pre>
+          </details>
+        )}
+      </div>
       <button onClick={() => setNotice(null)} aria-label="Fermer" className="opacity-60 hover:opacity-100">✕</button>
     </div>
   );

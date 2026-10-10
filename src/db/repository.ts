@@ -38,7 +38,12 @@ export async function getSeenUrls(userId: string): Promise<Set<string>> {
  * Insère les offres dans la table partagée. Si l'URL existe déjà (collectée pour
  * un autre utilisateur), on ne la duplique pas. Renvoie url → id pour toutes les offres.
  */
-export async function upsertOffers(jobs: JobDetail[]): Promise<Map<string, string>> {
+export async function upsertOffers(input: JobDetail[]): Promise<Map<string, string>> {
+  // PostgreSQL refuse qu'un même INSERT … ON CONFLICT DO UPDATE touche deux fois la même ligne
+  // (« cannot affect row a second time ») : on dédoublonne le lot sur la clé, l'URL normalisée.
+  const byUrl = new Map<string, JobDetail>();
+  for (const j of input) if (!byUrl.has(normalizeUrl(j.url))) byUrl.set(normalizeUrl(j.url), j);
+  const jobs = [...byUrl.values()];
   if (jobs.length === 0) return new Map();
 
   const rows = await db

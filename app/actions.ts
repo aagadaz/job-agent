@@ -205,7 +205,14 @@ export async function changeStatus(offerId: string, status: string): Promise<Act
     return { ok: true, message: result === 'appended' ? 'Ajoutée au Sheet' : result === 'updated' ? 'Sheet mis à jour' : '' };
   } catch (err) {
     console.error('Synchro Sheet :', err);
-    return { ok: false, message: `Statut enregistré, mais pas dans le Sheet : ${(err as Error).message}` };
+    // Nos propres messages « actionnables » (partage manquant, fichier Excel) sont montrés tels quels ;
+    // toute autre erreur (HTTP, réseau, jeton) reste dans les logs.
+    const raw = (err as Error).message;
+    const actionable = /^(Sheet inaccessible|Ce fichier est un Excel)/.test(raw);
+    return {
+      ok: false,
+      message: `Statut enregistré, mais pas dans le Sheet : ${actionable ? raw : 'réessaie plus tard (problème temporaire avec Google).'}`,
+    };
   }
 }
 
@@ -268,7 +275,8 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
   if (failure) {
     await failRun(userId, runId, `Lancement manuel impossible : ${failure}`);
     revalidatePath('/offers');
-    return { ok: false, message: `Lancement impossible (${failure}).` };
+    console.error('Lancement manuel :', failure); // le détail pour les logs Vercel, pas pour l'écran
+    return { ok: false, message: "La recherche n'a pas pu être lancée. Réessaie dans quelques minutes." };
   }
 
   revalidatePath('/offers');

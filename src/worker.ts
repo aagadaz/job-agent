@@ -99,6 +99,18 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   };
 }
 
+/**
+ * Message d'erreur à montrer à l'utilisateur. Les erreurs Drizzle mettent la requête SQL et
+ * TOUS ses paramètres (ici : des centaines de descriptions d'offres) dans .message ; la vraie
+ * cause, l'erreur PostgreSQL, est dans .cause. On remonte la chaîne et on borne la longueur.
+ */
+function errorMessage(err: unknown): string {
+  let e = err as { message?: string; cause?: unknown } | undefined;
+  while (e?.cause && typeof e.cause === 'object') e = e.cause as typeof e;
+  const message = e?.message ?? String(err);
+  return message.length > 300 ? `${message.slice(0, 300)}…` : message;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Variable d'environnement facultative qui doit être un UUID (vide = absente). */
@@ -134,7 +146,7 @@ async function main() {
       console.log(`   ✅ ${stats.kept} retenues, ${stats.rejected} écartées\n`);
     } catch (err) {
       failures++;
-      const message = (err as Error).message;
+      const message = errorMessage(err);
       await finishRun(runId, { status: 'error', error: message });
       console.error(`   ❌ ${message}\n`);
     }
@@ -145,13 +157,13 @@ async function main() {
 
 main()
   .catch(async err => {
-    console.error('ERREUR FATALE :', err);
+    console.error('ERREUR FATALE :', errorMessage(err));
     process.exitCode = 1;
     // Best effort : clore la ligne créée au clic. Échouera si c'est la base elle-même qui est
     // en cause ; l'interface s'en apercevra alors via l'API GitHub (src/lib/run-status.ts).
     const runId = process.env.RUN_ID?.trim();
     if (runId && UUID.test(runId)) {
-      await finishRun(runId, { status: 'error', error: (err as Error).message.slice(0, 500) }).catch(() => {});
+      await finishRun(runId, { status: 'error', error: errorMessage(err) }).catch(() => {});
     }
   })
   .finally(() => pool.end());

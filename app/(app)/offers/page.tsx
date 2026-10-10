@@ -2,13 +2,14 @@ import Link from 'next/link';
 import { RunSearchButton } from '../../components/RunSearchButton';
 import { RunWatcher } from '../../components/RunWatcher';
 import { summarizeRun, type RunSnapshot } from '@/lib/run-summary';
+import { describeRunError } from '@/lib/run-errors';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
 import { StatusSelect } from '../../components/StatusSelect';
 import { STATUSES, countOffersByCountry, listOffers, type ApplicationStatus } from '@/db/dashboard';
 import { COUNTRY_CODES, countryLabel } from '@/lib/countries';
 import { getReconciledLastRun } from '@/lib/run-status';
-import { requireUserId } from '@/lib/session';
+import { isAdmin, requireUserId } from '@/lib/session';
 
 export default async function OffersPage({
   searchParams,
@@ -42,8 +43,17 @@ export default async function OffersPage({
   };
 
   // Ce qui part vers le composant client : des données simples et sérialisables (pas de Date)
+  // Erreur : message clair pour l'utilisateur ; le détail technique ne quitte le serveur
+  // que pour un administrateur (le navigateur reçoit tout ce qu'on met dans les props).
+  const admin = await isAdmin();
   const snapshot: RunSnapshot | null = run
-    ? { id: run.id, status: run.status, error: run.error, stats: run.stats }
+    ? {
+        id: run.id,
+        status: run.status,
+        error: run.status === 'error' ? describeRunError(run.error) : null,
+        details: admin && run.status === 'error' ? run.error : null,
+        stats: run.stats,
+      }
     : null;
 
   return (
@@ -57,6 +67,12 @@ export default async function OffersPage({
               Dernière recherche : {run.startedAt.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} ·{' '}
               {summarizeRun(snapshot!).text}
             </p>
+          )}
+          {snapshot?.details && (
+            <details className="text-xs text-gray-400">
+              <summary className="cursor-pointer">Détails techniques (admin)</summary>
+              <pre className="mt-1 max-w-xl whitespace-pre-wrap break-all">{snapshot.details}</pre>
+            </details>
           )}
           <div className="mt-2">
             <RunSearchButton running={run?.status === 'running'} />
