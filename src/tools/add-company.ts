@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { eq } from 'drizzle-orm';
 import { db, pool } from '../db/client';
 import { users, companies } from '../db/schema';
-import { detectAts, fetchCompanyJobs, parseCareersUrl, SUPPORTED_ATS, type CompanyRef } from '../sources/ats';
+import { resolveCompany } from '../sources/ats';
 
 // Usage :
 //   npx tsx src/tools/add-company.ts --email moi@x.fr --name "Back Market"
@@ -24,23 +24,14 @@ async function main() {
   const [user] = await db.select().from(users).where(eq(users.email, values.email));
   if (!user) throw new Error(`Aucun utilisateur ${values.email} : lance d'abord upsert-user`);
 
-  let found: { ref: CompanyRef; jobCount: number } | null = null;
-  if (values.url) {
-    const parsed = parseCareersUrl(values.url);
-    if (!parsed) throw new Error(`URL non reconnue. ATS pris en charge : ${SUPPORTED_ATS.join(', ')}`);
-    const ref = { name: values.name, ...parsed };
-    const jobs = await fetchCompanyJobs(ref, { maxJobs: 0 });
-    found = jobs ? { ref, jobCount: jobs.length } : null;
-  } else {
-    console.log(`🔍 Recherche de "${values.name}" sur les ATS devinables...`);
-    found = await detectAts(values.name);
-  }
-
-  if (!found) {
-    console.log(`❌ Aucun flux public trouvé pour "${values.name}". Elle restera couverte par Adzuna.`);
+  if (!values.url) console.log(`🔍 Recherche de "${values.name}" sur les ATS devinables...`);
+  const result = await resolveCompany(values.name, values.url);
+  if (!result.ok) {
+    console.log(`❌ "${values.name}" : ${result.reason}. Elle restera couverte par Adzuna.`);
     console.log('   Si tu connais l\'URL de sa page carrières, relance avec --url.');
     return;
   }
+  const found = result;
 
   const { ref, jobCount } = found;
   await db

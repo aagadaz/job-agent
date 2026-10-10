@@ -11,8 +11,11 @@ import { excludeByTitle, includeByTitle, matchesLocation } from './lib/prefilter
 import { scoreOffers } from './lib/scorer';
 import type { JobDetail } from './lib/types';
 import { normalizeUrl } from './lib/url';
+import { mapPool } from './lib/concurrency';
 import { fetchAdzunaOffers } from './sources/adzuna';
 import { fetchCompanyJobs } from './sources/ats';
+
+const MAX_SCORED_PER_RUN = 150; // ≈ 5 min de notation et quelques centimes de Claude Haiku
 
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
 
@@ -30,7 +33,14 @@ async function collect(userId: string, keywords: string[], location: string): Pr
     })),
   ];
 
-  const results = await Promise.allSettled(tasks.map(t => t.run()));
+  // Avec 100 entreprises, tout lancer d'un coup ouvrirait des centaines de connexions :
+  // 6 sources à la fois, chacune isolée (une panne = un résultat "rejected", pas un crash).
+  const results = await mapPool(tasks, 6, t =>
+    t.run().then(
+      (value): PromiseSettledResult<JobDetail[]> => ({ status: 'fulfilled', value }),
+      (reason): PromiseSettledResult<JobDetail[]> => ({ status: 'rejected', reason }),
+    ),
+  );
 
   return results.flatMap((r, i) => {
     if (r.status === 'fulfilled') {
@@ -58,13 +68,17 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   const fresh = filtered.filter(o => !seen.has(normalizeUrl(o.url)));
   console.log(`   ${fetched.length} collectées → ${unique.length} uniques → ${filtered.length} après filtres → ${fresh.length} nouvelles`);
 
-  const offerIds = await upsertOffers(fresh);
-  const scored = await scoreOffers(client, cvText, fresh);
+  // Plafond par exécution : le 1er passage sur 100 entreprises peut ramener des centaines
+  // d'offres. Le reste sera noté aux exécutions suivantes (pas encore "vu", donc toujours frais).
+  const batch = fresh.slice(0, MAX_SCORED_PER_RUN);
+  if (fresh.length > batch.length) console.log(`   ⏳ ${fresh.length - batch.length} offres reportées à la prochaine exécution`);
+  const offerIds = await upsertOffers(batch);
+  const scored = await scoreOffers(client, cvText, batch);
   const { kept, rejected } = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
 
   return {
     fetched: fetched.length, unique: unique.length, afterFilters: filtered.length,
-    new: fresh.length, kept, rejected,
+    new: batch.length, deferred: fresh.length - batch.length, kept, rejected,
   };
 }
 

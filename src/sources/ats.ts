@@ -1,6 +1,7 @@
 import type { JobDetail } from '../lib/types';
 import { htmlToText } from '../lib/html';
 import { fold } from '../lib/text';
+import { mapPool } from '../lib/concurrency';
 
 // Adapter "pages carrières" : un module, sept ATS. Chaque fonction traduit le format
 // de l'ATS vers notre JobDetail. Toutes ces API sont publiques, sans clé, et sont celles
@@ -37,23 +38,6 @@ async function getJson<T>(url: string, init: { method?: 'GET' | 'POST'; body?: u
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`HTTP ${res.status} sur ${new URL(url).host}`);
   return (await res.json()) as T;
-}
-
-/**
- * Applique `fn` à chaque élément avec au plus `limit` appels simultanés.
- * Promise.all sur 100 URL ouvrirait 100 connexions d'un coup : impoli, et souvent bloqué (HTTP 429).
- */
-async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function lane() {
-    while (next < items.length) {
-      const i = next++; // pas de course : JS est mono-thread, l'incrément est atomique entre deux await
-      results[i] = await fn(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
-  return results;
 }
 
 const isoDay = (d?: string | number | null) => (d ? new Date(d).toISOString().slice(0, 10) : '');
@@ -400,6 +384,42 @@ export function parseCareersUrl(raw: string): { ats: Ats; slug: string } | null 
   return null;
 }
 
+
+// ─── Sondage : combien d'offres publie cette entreprise sur cet ATS ? ───
+// Une seule requête légère par ATS (pas de descriptions). null = tableau inexistant.
+// Piège vérifié en conditions réelles : Lever, Workable ou SmartRecruiters peuvent répondre
+// « 200, 0 offre » pour une entreprise qui ne les utilise pas (ou plus). D'où la règle de
+// détection plus bas : seul un tableau AVEC des offres compte comme une preuve.
+
+const PROBES: Record<Ats, (slug: string) => Promise<number | null>> = {
+  greenhouse: async s => (await getJson<{ jobs?: unknown[] }>(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(s)}/jobs`))?.jobs?.length ?? null,
+  lever: async s => {
+    for (const host of ['https://api.lever.co', 'https://api.eu.lever.co']) {
+      const d = await getJson<unknown[]>(`${host}/v0/postings/${encodeURIComponent(s)}?mode=json`);
+      if (Array.isArray(d)) return d.length;
+    }
+    return null;
+  },
+  ashby: async s => {
+    const d = await getJson<{ jobs?: { isListed?: boolean }[] }>(`https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(s)}`);
+    return d?.jobs ? d.jobs.filter(j => j.isListed !== false).length : null;
+  },
+  workable: async s => (await getJson<{ jobs?: unknown[] }>(`https://apply.workable.com/api/v1/widget/accounts/${encodeURIComponent(s)}`))?.jobs?.length ?? null,
+  recruitee: async s => (/^[a-z0-9-]+$/i.test(s) ? ((await getJson<{ offers?: unknown[] }>(`https://${s}.recruitee.com/api/offers/`))?.offers?.length ?? null) : null),
+  smartrecruiters: async s => (await getJson<{ totalFound?: number }>(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(s)}/postings?limit=1`))?.totalFound ?? null,
+  workday: async s => {
+    const wd = parseWorkdaySlug(s);
+    if (!wd) return null;
+    const d = await getJson<{ total?: number }>(`${wd.api}/jobs`, { method: 'POST', body: { appliedFacets: {}, limit: 1, offset: 0, searchText: '' } });
+    return d?.total ?? null;
+  },
+};
+
+/** Nombre d'offres publiées, ou null si ce tableau n'existe pas / ne répond pas. */
+export async function probeCompany(ats: Ats, slug: string): Promise<number | null> {
+  return PROBES[ats](slug).catch(() => null);
+}
+
 /** Variantes de slug à essayer pour un nom : "Back Market" → backmarket, back-market. */
 export function slugCandidates(name: string): string[] {
   const words = fold(name).split(/[^a-z0-9]+/).filter(Boolean);
@@ -409,23 +429,39 @@ export function slugCandidates(name: string): string[] {
 /** ATS devinables à partir du seul nom (Workday exige l'URL, cf. parseCareersUrl). */
 const GUESSABLE: Ats[] = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'smartrecruiters'];
 
-/** Détecte sur quel ATS une entreprise publie ses offres. Premier résultat trouvé. */
+/**
+ * Détecte sur quel ATS une entreprise publie ses offres.
+ * Règle : parmi tous les tableaux trouvés, on garde celui qui a le PLUS d'offres ;
+ * un tableau vide n'est pas une preuve (cf. piège ci-dessus).
+ */
 export async function detectAts(name: string): Promise<{ ref: CompanyRef; jobCount: number } | null> {
   for (const slug of slugCandidates(name)) {
-    // Les ATS sont interrogés en parallèle pour un même slug, puis on garde le premier dans l'ordre.
-    const attempts = await Promise.all(
-      GUESSABLE.map(async ats => {
-        const ref = { name, ats, slug };
-        try {
-          const jobs = await fetchCompanyJobs(ref, { maxJobs: 0 }); // détection : pas de détails
-          return jobs ? { ref, jobCount: jobs.length } : null;
-        } catch {
-          return null; // erreur réseau ou format inattendu : combinaison suivante
-        }
-      }),
-    );
-    const hit = attempts.find(a => a !== null);
-    if (hit) return hit;
+    const counts = await Promise.all(GUESSABLE.map(async ats => ({ ats, count: await probeCompany(ats, slug) })));
+    const best = counts
+      .filter((c): c is { ats: Ats; count: number } => c.count !== null && c.count > 0)
+      .sort((a, b) => b.count - a.count)[0];
+    if (best) return { ref: { name, ats: best.ats, slug }, jobCount: best.count };
   }
   return null;
+}
+
+export type ResolveResult =
+  | { ok: true; ref: CompanyRef; jobCount: number }
+  | { ok: false; reason: 'invalid_url' | 'unreachable' | 'not_found' };
+
+/**
+ * Point d'entrée unique pour ajouter une entreprise (formulaire, import de fichier, CLI) :
+ * - avec une URL : on la lit, puis on vérifie que le tableau répond (0 offre accepté : l'entreprise
+ *   a été désignée explicitement, elle peut simplement ne pas recruter en ce moment) ;
+ * - sans URL : détection par le nom.
+ */
+export async function resolveCompany(name: string, careersUrl?: string): Promise<ResolveResult> {
+  if (careersUrl?.trim()) {
+    const parsed = parseCareersUrl(careersUrl);
+    if (!parsed) return { ok: false, reason: 'invalid_url' };
+    const count = await probeCompany(parsed.ats, parsed.slug);
+    return count === null ? { ok: false, reason: 'unreachable' } : { ok: true, ref: { name, ...parsed }, jobCount: count };
+  }
+  const detected = await detectAts(name);
+  return detected ? { ok: true, ...detected } : { ok: false, reason: 'not_found' };
 }

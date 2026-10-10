@@ -70,8 +70,10 @@ export async function listCompanies(userId: string) {
 }
 
 // Le type de 'ats' est DÉRIVÉ du schéma : ajouter un ATS à l'enum suffit, rien à recopier ici
-export async function insertCompany(userId: string, c: Pick<typeof companies.$inferInsert, 'name' | 'ats' | 'slug'>) {
-  await db.insert(companies).values({ userId, ...c }).onConflictDoNothing();
+/** Ajoute l'entreprise ; renvoie false si elle était déjà suivie (même ATS + identifiant). */
+export async function insertCompany(userId: string, c: Pick<typeof companies.$inferInsert, 'name' | 'ats' | 'slug'>): Promise<boolean> {
+  const inserted = await db.insert(companies).values({ userId, ...c }).onConflictDoNothing().returning({ id: companies.id });
+  return inserted.length > 0; // ON CONFLICT DO NOTHING + RETURNING : 0 ligne = conflit
 }
 
 export async function deleteCompany(userId: string, companyId: string): Promise<void> {

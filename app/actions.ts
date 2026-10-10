@@ -12,7 +12,9 @@ import { requireUserId } from '@/lib/session';
 import { dispatchSearch, isGithubConfigured } from '@/lib/github';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { ensureApplicationsTab, parseSheetId, syncApplication } from '@/lib/sheets';
-import { detectAts, fetchCompanyJobs, parseCareersUrl, SUPPORTED_ATS, type Ats } from '@/sources/ats';
+import { mapPool } from '@/lib/concurrency';
+import { readCompanyLines } from '@/lib/csv';
+import { resolveCompany, SUPPORTED_ATS } from '@/sources/ats';
 
 // Une server action est un endpoint HTTP public : on revérifie la session ET on valide
 // chaque champ, même si le formulaire "ne permet pas" de l'envoyer autrement.
@@ -88,6 +90,12 @@ const CompanySchema = z.object({
   careersUrl: z.string().trim().max(500),
 });
 
+const RESOLVE_ERRORS = {
+  invalid_url: `URL non reconnue. ATS pris en charge : ${SUPPORTED_ATS.join(', ')}.`,
+  unreachable: "Le tableau d'offres ne répond pas à cette adresse : vérifie l'URL.",
+  not_found: 'Aucun flux public trouvé. Colle l\'URL de sa page carrières (obligatoire pour Workday), sinon elle reste couverte par Adzuna.',
+} as const;
+
 export async function addCompany(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
   const userId = await requireUserId();
   const parsed = CompanySchema.safeParse({
@@ -97,38 +105,63 @@ export async function addCompany(_prev: ActionResult | null, form: FormData): Pr
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
   const { name, careersUrl } = parsed.data;
 
-  let found: { ats: Ats; slug: string; jobCount: number } | null = null;
-  if (careersUrl) {
-    // 1) URL fournie : on lit l'ATS et l'identifiant dedans, puis on vérifie que le flux répond
-    const ref = parseCareersUrl(careersUrl);
-    if (!ref) {
-      return {
-        ok: false,
-        message: `URL non reconnue. ATS pris en charge : ${SUPPORTED_ATS.join(', ')}. Ouvre une offre de l'entreprise et regarde l'adresse : elle contient souvent le nom de l'ATS.`,
-      };
-    }
-    const jobs = await fetchCompanyJobs({ name, ...ref }, { maxJobs: 0 }).catch(() => null);
-    if (jobs) found = { ...ref, jobCount: jobs.length };
-  } else {
-    // 2) Nom seul : on devine l'identifiant sur les ATS qui le permettent
-    const detected = await detectAts(name);
-    if (detected) found = { ats: detected.ref.ats, slug: detected.ref.slug, jobCount: detected.jobCount };
-  }
+  const result = await resolveCompany(name, careersUrl);
+  if (!result.ok) return { ok: false, message: `« ${name} » : ${RESOLVE_ERRORS[result.reason]}` };
 
-  if (!found) {
-    return {
-      ok: false,
-      message: careersUrl
-        ? `Le flux de « ${name} » ne répond pas à cette adresse. Vérifie l'URL de la page carrières.`
-        : `Aucun flux public trouvé pour « ${name} ». Colle l'URL de sa page carrières (obligatoire pour Workday), sinon elle reste couverte par Adzuna.`,
-    };
-  }
-
-  await insertCompany(userId, { name, ats: found.ats, slug: found.slug });
+  const added = await insertCompany(userId, { name, ats: result.ref.ats, slug: result.ref.slug });
   revalidatePath('/companies');
-  // Workday et SmartRecruiters ne sont pas comptés à l'ajout (un détail = une requête)
-  const count = found.jobCount > 0 ? `, ${found.jobCount} offres ouvertes` : '';
-  return { ok: true, message: `${name} ajoutée : ${found.ats} (« ${found.slug} »)${count}.` };
+  if (!added) return { ok: true, message: `${name} est déjà dans ta liste.` };
+  return { ok: true, message: `${name} ajoutée : ${result.ref.ats} (« ${result.ref.slug} »), ${result.jobCount} offres ouvertes.` };
+}
+
+// ─── Import d'un fichier d'entreprises ───
+export interface ImportResult extends ActionResult {
+  failed: { name: string; reason: string }[]; // lignes à corriger
+  pending: string[];                          // non traitées faute de temps : relancer l'import
+}
+
+const IMPORT_MAX_BYTES = 200_000;
+const IMPORT_MAX_LINES = 300;
+const IMPORT_BUDGET_MS = 45_000; // sous la durée max de la fonction (60 s), avec une marge
+
+export async function importCompanies(_prev: ImportResult | null, form: FormData): Promise<ImportResult> {
+  const userId = await requireUserId();
+  const empty = { failed: [], pending: [] };
+
+  const file = form.get('file');
+  if (!(file instanceof File) || file.size === 0) return { ok: false, message: 'Choisis un fichier .csv ou .txt.', ...empty };
+  if (file.size > IMPORT_MAX_BYTES) return { ok: false, message: 'Fichier trop gros (200 Ko maximum).', ...empty };
+  if (!/\.(csv|txt)$/i.test(file.name)) return { ok: false, message: 'Format attendu : .csv ou .txt (une entreprise par ligne).', ...empty };
+
+  const lines = readCompanyLines(await file.text());
+  if (lines.length === 0) return { ok: false, message: 'Aucune entreprise trouvée dans le fichier.', ...empty };
+  if (lines.length > IMPORT_MAX_LINES) {
+    return { ok: false, message: `${lines.length} lignes : ${IMPORT_MAX_LINES} maximum par import, découpe le fichier.`, ...empty };
+  }
+
+  const deadline = Date.now() + IMPORT_BUDGET_MS;
+  let added = 0;
+  let already = 0;
+  const failed: ImportResult['failed'] = [];
+  const pending: string[] = [];
+
+  // Concurrence faible : une détection par nom interroge 6 ATS d'un coup, et certains
+  // (Workable) renvoient HTTP 429 si on les sollicite trop vite.
+  await mapPool(lines, 4, async line => {
+    if (Date.now() > deadline) { pending.push(line.name); return; }
+    const result = await resolveCompany(line.name, line.careersUrl).catch(() => null);
+    if (!result) { failed.push({ name: line.name, reason: 'erreur réseau, réessaie' }); return; }
+    if (!result.ok) { failed.push({ name: line.name, reason: RESOLVE_ERRORS[result.reason] }); return; }
+    if (await insertCompany(userId, { name: line.name, ats: result.ref.ats, slug: result.ref.slug })) added++;
+    else already++;
+  });
+
+  revalidatePath('/companies');
+  const parts = [`${added} ajoutée${added > 1 ? 's' : ''}`];
+  if (already) parts.push(`${already} déjà suivie${already > 1 ? 's' : ''}`);
+  if (failed.length) parts.push(`${failed.length} non trouvée${failed.length > 1 ? 's' : ''}`);
+  if (pending.length) parts.push(`${pending.length} non traitée${pending.length > 1 ? 's' : ''} (relance l'import : les déjà ajoutées seront ignorées)`);
+  return { ok: added + already > 0, message: `Import terminé : ${parts.join(', ')}.`, failed, pending };
 }
 
 export async function removeCompany(companyId: string): Promise<void> {

@@ -1,7 +1,12 @@
 import { CompanyForm } from '../../components/CompanyForm';
+import { ImportCompaniesForm } from '../../components/ImportCompaniesForm';
 import { removeCompany } from '../../actions';
 import { listCompanies } from '@/db/dashboard';
 import { requireUserId } from '@/lib/session';
+
+// Durée max des fonctions de cette page, server actions comprises : l'import d'un fichier
+// interroge des dizaines d'API et peut prendre jusqu'à une minute.
+export const maxDuration = 60;
 
 export default async function CompaniesPage() {
   const userId = await requireUserId();
@@ -10,11 +15,16 @@ export default async function CompaniesPage() {
   return (
     <div className="space-y-6">
       <section className="rounded-xl border bg-white p-6">
-        <h1 className="mb-1 text-lg font-semibold">Entreprises suivies</h1>
+        <h1 className="mb-1 text-lg font-semibold">Entreprises suivies ({companies.length})</h1>
         <p className="mb-4 text-sm text-gray-600">
           Leurs offres sont lues directement sur leur page carrières chaque matin (Greenhouse, Lever, Ashby, Workable, Recruitee, SmartRecruiters, Workday). Les autres restent couvertes par Adzuna.
         </p>
         <CompanyForm />
+      </section>
+
+      <section className="rounded-xl border bg-white p-6">
+        <h2 className="mb-1 font-semibold">Importer une liste</h2>
+        <ImportCompaniesForm />
       </section>
 
       <section className="rounded-xl border bg-white">
