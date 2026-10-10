@@ -28,7 +28,8 @@ export default async function ProfilePage() {
         <ProfileForm
           initial={{
             keywords: profile?.keywords.join(', ') ?? '',
-            location: profile?.location ?? 'Paris',
+            // Profil antérieur aux zones : on convertit l'ancienne ville en zone France
+            areas: profile?.areas.length ? profile.areas : [{ country: 'fr', city: profile?.location ?? 'Paris' }],
             includeTerms: profile?.includeTerms.join(', ') ?? 'data, machine learning, ml, ia, ai, llm, nlp, mlops',
             excludeTerms: profile?.excludeTerms.join(', ') ?? 'senior, lead, principal, staff, head of, director',
             rejectThreshold: profile?.rejectThreshold ?? 35,

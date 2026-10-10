@@ -5,6 +5,7 @@ import { ScoreBadge } from '../../../components/ScoreBadge';
 import { DismissButton } from '../../../components/DismissButton';
 import { StatusSelect } from '../../../components/StatusSelect';
 import { getOfferDetail } from '@/db/dashboard';
+import { countryLabel } from '@/lib/countries';
 import { requireUserId } from '@/lib/session';
 
 const VERDICTS = { postuler: 'Postuler', a_etudier: 'À étudier', ignorer: 'Ignorer' } as const;
@@ -24,7 +25,7 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
   if (!offer) notFound();
 
   const excerpt = EXCERPT_ONLY.has(offer.source);
-  const meta = [offer.company, offer.location || 'Lieu non précisé', offer.employmentType, offer.datePosted && `publiée le ${offer.datePosted}`]
+  const meta = [offer.company, offer.location || 'Lieu non précisé', countryLabel(offer.country), offer.employmentType, offer.datePosted && `publiée le ${offer.datePosted}`]
     .filter(Boolean)
     .join(' · ');
 

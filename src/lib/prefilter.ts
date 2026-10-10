@@ -1,5 +1,6 @@
 import type { JobDetail } from './types';
 import { fold, wordPattern } from './text';
+import { detectCountries, type CountryCode } from './countries';
 
 /**
  * Écarte les offres dont l'intitulé contient un terme exclu (ex. "senior", "lead").
@@ -23,13 +24,15 @@ export function includeByTitle(offers: JobDetail[], includeTerms: string[]): Job
 
 /**
  * Filtre géographique pour les pages carrières (une entreprise internationale publie
- * des postes partout). On garde : la ville voulue, la France, ou un lieu non renseigné
- * (le scoring tranchera). Non appliqué à Adzuna, déjà filtré par sa recherche.
+ * partout) : garde les offres situées dans un des pays voulus, et leur attribue ce pays.
+ * Lieu vide : gardée, pays inconnu (le scoring tranchera). Non appliqué à Adzuna, dont
+ * la recherche est déjà faite pays par pays.
  */
-export function matchesLocation(offers: JobDetail[], wanted: string): JobDetail[] {
-  const targets = [fold(wanted), 'france', 'ile-de-france'].filter(Boolean);
-  return offers.filter(o => {
-    const loc = fold(o.location);
-    return loc === '' || targets.some(t => loc.includes(t));
+export function keepInCountries(offers: JobDetail[], wanted: CountryCode[]): JobDetail[] {
+  return offers.flatMap<JobDetail>(o => {
+    if (!o.location.trim()) return [{ ...o, country: null }];
+    // Une offre multi-sites (« Paris | Luxembourg ») prend le premier pays VOULU qu'elle cite
+    const country = detectCountries(o.location).find(c => wanted.includes(c));
+    return country ? [{ ...o, country }] : [];
   });
 }

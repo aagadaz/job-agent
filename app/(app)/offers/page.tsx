@@ -5,14 +5,15 @@ import { summarizeRun, type RunSnapshot } from '@/lib/run-summary';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
 import { StatusSelect } from '../../components/StatusSelect';
-import { STATUSES, listOffers, type ApplicationStatus } from '@/db/dashboard';
+import { STATUSES, countOffersByCountry, listOffers, type ApplicationStatus } from '@/db/dashboard';
+import { COUNTRY_CODES, countryLabel } from '@/lib/countries';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { requireUserId } from '@/lib/session';
 
 export default async function OffersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rejected?: string; status?: string; dismissed?: string }>;
+  searchParams: Promise<{ rejected?: string; status?: string; dismissed?: string; country?: string }>;
 }) {
   const userId = await requireUserId();
   const params = await searchParams;
@@ -21,7 +22,24 @@ export default async function OffersPage({
   // Valeur venant de l'URL : on ne la garde que si elle fait partie des statuts connus
   const status = STATUSES.find(s => s === params.status) as ApplicationStatus | undefined;
 
-  const [rows, run] = await Promise.all([listOffers(userId, { showRejected: showRejected || dismissed, status, dismissed }), getReconciledLastRun(userId)]);
+  // Pays venant de l'URL : accepté seulement s'il est connu (ou 'none' = pays non déterminé)
+  const country = params.country === 'none' || COUNTRY_CODES.includes(params.country as never) ? params.country : undefined;
+
+  const filters = { showRejected: showRejected || dismissed, dismissed };
+  const [rows, byCountry, run] = await Promise.all([
+    listOffers(userId, { ...filters, status, country }),
+    countOffersByCountry(userId, filters),
+    getReconciledLastRun(userId),
+  ]);
+  const total = byCountry.reduce((sum, c) => sum + c.n, 0);
+
+  /** Lien qui change UN paramètre en gardant les autres (filtres combinables). */
+  const href = (patch: Record<string, string | undefined>) => {
+    const next = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...params, ...patch })) if (v) next.set(k, v);
+    const qs = next.toString();
+    return qs ? `/offers?${qs}` : '/offers';
+  };
 
   // Ce qui part vers le composant client : des données simples et sérialisables (pas de Date)
   const snapshot: RunSnapshot | null = run
@@ -57,6 +75,24 @@ export default async function OffersPage({
         </nav>
       </div>
 
+      {/* Onglets par pays : affichés dès que les offres couvrent plus d'un pays */}
+      {byCountry.length > 1 && (
+        <nav className="flex flex-wrap gap-2 border-b pb-3 text-sm">
+          <Link href={href({ country: undefined })} className={`rounded-full px-3 py-1 ${!country ? 'bg-gray-900 text-white' : 'border bg-white'}`}>
+            Tous les pays ({total})
+          </Link>
+          {byCountry.map(c => (
+            <Link
+              key={c.country}
+              href={href({ country: c.country })}
+              className={`rounded-full px-3 py-1 ${country === c.country ? 'bg-gray-900 text-white' : 'border bg-white'}`}
+            >
+              {countryLabel(c.country)} ({c.n})
+            </Link>
+          ))}
+        </nav>
+      )}
+
       {rows.length === 0 ? (
         <p className="rounded-xl border bg-white p-6 text-sm text-gray-500">
           {dismissed
@@ -78,7 +114,7 @@ export default async function OffersPage({
                     ↗
                   </a>
                   <p className="text-sm text-gray-600">
-                    {o.company} · {o.location || 'Lieu non précisé'} · {o.source}
+                    {o.company} · {o.location || 'Lieu non précisé'} · <b className="font-medium">{countryLabel(o.country)}</b> · {o.source}
                     {o.datePosted && ` · ${o.datePosted}`}
                   </p>
                   {o.justification && <p className="mt-2 text-sm">{o.justification}</p>}

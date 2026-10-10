@@ -9,6 +9,7 @@ export interface JobDetail{
     url: string;
     source: string; // 'adzuna', 'greenhouse', 'lever', 'ashby'
     qualifications:string;
+    country?: string | null; // code ISO (fr, lu…) ; null = lieu non précisé
 }
 
 export interface OfferScore{

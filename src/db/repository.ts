@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { db } from './client';
 import { users, profiles, offers, userOffers, runs, companies } from './schema';
 import type { JobDetail, ScoredOffer } from '../lib/types';
@@ -54,9 +54,14 @@ export async function upsertOffers(jobs: JobDetail[]): Promise<Map<string, strin
       datePosted: j.datePosted,
       description: j.description,
       qualifications: j.qualifications,
+      country: j.country ?? null,
     })))
     // DO UPDATE (et non DO NOTHING) pour que RETURNING renvoie aussi les lignes déjà existantes
-    .onConflictDoUpdate({ target: offers.url, set: { fetchedAt: new Date() } })
+    .onConflictDoUpdate({
+      target: offers.url,
+      // Pays : on garde celui déjà connu, sinon on prend le nouveau (excluded = la ligne qu'on tentait d'insérer)
+      set: { fetchedAt: new Date(), country: sql`coalesce(${offers.country}, excluded.country)` },
+    })
     .returning({ id: offers.id, url: offers.url });
 
   return new Map(rows.map(r => [r.url, r.id]));

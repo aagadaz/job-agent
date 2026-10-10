@@ -13,6 +13,7 @@ import { dispatchSearch, isGithubConfigured } from '@/lib/github';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { ensureApplicationsTab, parseSheetId, syncApplication } from '@/lib/sheets';
 import { mapPool } from '@/lib/concurrency';
+import { COUNTRY_CODES, type CountryCode } from '@/lib/countries';
 import { readCompanyLines } from '@/lib/csv';
 import { resolveCompany, SUPPORTED_ATS } from '@/sources/ats';
 
@@ -29,7 +30,18 @@ const csv = z.string().transform(s => s.split(',').map(t => t.trim()).filter(Boo
 
 const ProfileSchema = z.object({
   keywords: csv,
-  location: z.string().trim().min(1, 'La localisation est obligatoire').max(100),
+  // Les zones arrivent en JSON (champ caché du formulaire) : on parse PUIS on valide la forme
+  areas: z
+    .string()
+    .transform((s, ctx) => {
+      try { return JSON.parse(s) as unknown; } catch { ctx.addIssue({ code: 'custom', message: 'Zones de recherche illisibles' }); return z.NEVER; }
+    })
+    .pipe(
+      z.array(z.object({
+        country: z.enum(COUNTRY_CODES as [CountryCode, ...CountryCode[]]),
+        city: z.string().trim().max(60),
+      })).min(1, 'Ajoute au moins une zone de recherche').max(6, '6 zones maximum'),
+    ),
   includeTerms: csv,
   excludeTerms: csv,
   rejectThreshold: z.coerce.number().int().min(0).max(100),
@@ -43,7 +55,7 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
 
   const parsed = ProfileSchema.safeParse({
     keywords: form.get('keywords') ?? '',
-    location: form.get('location') ?? '',
+    areas: form.get('areas') ?? '[]',
     includeTerms: form.get('includeTerms') ?? '',
     excludeTerms: form.get('excludeTerms') ?? '',
     rejectThreshold: form.get('rejectThreshold') ?? 35,

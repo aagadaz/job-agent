@@ -2,6 +2,7 @@ import {
   pgTable, pgEnum, uuid, text, integer, boolean, timestamp, jsonb,
   primaryKey, unique, index,
 } from 'drizzle-orm/pg-core';
+import type { SearchArea } from '../lib/countries';
 
 // ─── Énumérations : des ensembles fermés de valeurs, vérifiés par PostgreSQL ───
 // Ajouter une valeur = migration "ALTER TYPE ... ADD VALUE" (toujours en fin de liste)
@@ -28,7 +29,9 @@ export const users = pgTable('users', {
 export const profiles = pgTable('profiles', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   keywords: text('keywords').array().notNull().default([]),      // vide → déduits du CV par Claude
-  location: text('location').notNull().default('Paris'),
+  location: text('location').notNull().default('Paris'), // ancien champ, remplacé par `areas` (à supprimer plus tard)
+  // Zones de recherche : [{ country: 'fr', city: 'Paris' }, { country: 'lu', city: '' }]
+  areas: jsonb('areas').$type<SearchArea[]>().notNull().default([]),
   excludeTerms: text('exclude_terms').array().notNull().default([]), // ex. ['senior', 'lead']
   includeTerms: text('include_terms').array().notNull().default([]), 
   rejectThreshold: integer('reject_threshold').notNull().default(35),
@@ -62,6 +65,7 @@ export const offers = pgTable('offers', {
   datePosted: text('date_posted').notNull().default(''),
   description: text('description').notNull().default(''),
   qualifications: text('qualifications').notNull().default(''),
+  country: text('country'), // code ISO déduit du lieu (ou du pays de recherche Adzuna) ; null = inconnu
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

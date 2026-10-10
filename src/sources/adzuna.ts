@@ -3,7 +3,8 @@ import type { JobDetail } from '../lib/types';
 // Adapter Adzuna : traduit le format de l'API Adzuna vers notre modèle JobDetail.
 // Le reste du pipeline (scoring, Sheet) ne sait pas d'où viennent les offres.
 
-const BASE_URL = 'https://api.adzuna.com/v1/api/jobs/fr/search';
+// Une base par pays : /jobs/fr/search, /jobs/be/search… (cf. COUNTRIES[x].adzuna)
+const BASE_URL = 'https://api.adzuna.com/v1/api/jobs';
 const RESULTS_PER_PAGE = 50;
 const PAGES_PER_KEYWORD = 2;     // 2 x 50 = 100 offres max par mot-clé
 const MAX_DAYS_OLD = 14;         // offres publiées depuis moins de 14 jours
@@ -30,7 +31,8 @@ interface AdzunaResponse {
 }
 
 export interface AdzunaSearchOptions {
-  location: string;
+  country: string;  // code Adzuna du pays (fr, be, de…)
+  location: string; // ville, ou vide = tout le pays
 }
 
 function getCredentials(): { appId: string; appKey: string } {
@@ -51,7 +53,7 @@ function formatSalary(job: AdzunaJob): string {
   return job.salary_is_predicted === '1' ? `${range} (estimé)` : range;
 }
 
-function toJobDetail(job: AdzunaJob): JobDetail {
+function toJobDetail(job: AdzunaJob, country: string): JobDetail {
   return {
     title: job.title.replace(/<[^>]+>/g, ''), // Adzuna surligne parfois les mots-clés en <strong>
     description: job.description.replace(/<[^>]+>/g, ''),
@@ -63,6 +65,7 @@ function toJobDetail(job: AdzunaJob): JobDetail {
     location: job.location?.display_name ?? '',
     url: job.redirect_url,
     source: 'adzuna',
+    country, // la recherche était faite dans ce pays : pas besoin de le deviner
   };
 }
 
@@ -72,14 +75,14 @@ async function fetchPage(keyword: string, page: number, opts: AdzunaSearchOption
     app_id: appId,
     app_key: appKey,
     what: keyword,
-    where: opts.location,
+    ...(opts.location ? { where: opts.location } : {}),
     results_per_page: String(RESULTS_PER_PAGE),
     max_days_old: String(MAX_DAYS_OLD),
     permanent: '1',
     sort_by: 'date',
   });
 
-  const res = await fetch(`${BASE_URL}/${page}?${params}`, {
+  const res = await fetch(`${BASE_URL}/${opts.country}/search/${page}?${params}`, {
     headers: { Accept: 'application/json' },
   });
 
@@ -106,8 +109,8 @@ export async function fetchAdzunaOffers(keywords: string[], opts: AdzunaSearchOp
       found += jobs.length;
       if (jobs.length < RESULTS_PER_PAGE) break; // dernière page atteinte
     }
-    console.log(`🔎 "${keyword}" : ${found} offres`);
+    console.log(`🔎 [${opts.country}] "${keyword}" : ${found} offres`);
   }
 
-  return [...byId.values()].map(toJobDetail);
+  return [...byId.values()].map(j => toJobDetail(j, opts.country));
 }

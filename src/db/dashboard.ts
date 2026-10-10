@@ -2,6 +2,7 @@ import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from './client';
 import { users, profiles, companies, offers, userOffers, runs } from './schema';
 import { STATUS_LABELS } from '../lib/status';
+import type { SearchArea } from '../lib/countries';
 
 // Requêtes de l'interface web. Règle d'or : CHAQUE requête filtre par userId,
 // passé par le serveur à partir de la session — jamais par une valeur venant du navigateur.
@@ -36,7 +37,7 @@ export async function getUserWithProfile(userId: string) {
 
 export interface ProfileInput {
   keywords: string[];
-  location: string;
+  areas: SearchArea[];
   includeTerms: string[];
   excludeTerms: string[];
   rejectThreshold: number;
@@ -82,11 +83,32 @@ export async function deleteCompany(userId: string, companyId: string): Promise<
 }
 
 // ─── Offres ───
-export async function listOffers(userId: string, opts: { showRejected: boolean; status?: ApplicationStatus; dismissed?: boolean }) {
+interface OfferFilters { showRejected: boolean; dismissed?: boolean }
+
+/** Conditions communes au fil et à ses compteurs (mêmes règles = mêmes chiffres). */
+function feedConditions(userId: string, opts: OfferFilters) {
   const conditions = [eq(userOffers.userId, userId)];
   // Corbeille : seulement les supprimées ; sinon, jamais les supprimées
   conditions.push(opts.dismissed ? isNotNull(userOffers.dismissedAt) : isNull(userOffers.dismissedAt));
   if (!opts.showRejected) conditions.push(eq(userOffers.rejected, false));
+  return conditions;
+}
+
+/** Nombre d'offres par pays pour les onglets du fil ('none' = pays inconnu). */
+export async function countOffersByCountry(userId: string, opts: OfferFilters) {
+  const rows = await db
+    .select({ country: offers.country, n: sql<number>`count(*)::int` })
+    .from(userOffers)
+    .innerJoin(offers, eq(offers.id, userOffers.offerId))
+    .where(and(...feedConditions(userId, opts)))
+    .groupBy(offers.country);
+  return rows.map(r => ({ country: r.country ?? 'none', n: r.n })).sort((a, b) => b.n - a.n);
+}
+
+export async function listOffers(userId: string, opts: OfferFilters & { status?: ApplicationStatus; country?: string }) {
+  const conditions = feedConditions(userId, opts);
+  // 'none' = offres dont le pays n'a pas pu être déterminé
+  if (opts.country) conditions.push(opts.country === 'none' ? isNull(offers.country) : eq(offers.country, opts.country));
   if (opts.status) conditions.push(eq(userOffers.status, opts.status));
 
   return db
@@ -95,6 +117,7 @@ export async function listOffers(userId: string, opts: { showRejected: boolean; 
       title: offers.title,
       company: offers.company,
       location: offers.location,
+      country: offers.country,
       url: offers.url,
       source: offers.source,
       datePosted: offers.datePosted,
@@ -136,6 +159,7 @@ export async function getOfferDetail(userId: string, offerId: string) {
       title: offers.title,
       company: offers.company,
       location: offers.location,
+      country: offers.country,
       salary: offers.salary,
       employmentType: offers.employmentType,
       datePosted: offers.datePosted,

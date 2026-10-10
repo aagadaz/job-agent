@@ -1,12 +1,13 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
+import { COUNTRIES, COUNTRY_CODES, type CountryCode, type SearchArea } from '@/lib/countries';
 import { updateProfile } from '../actions';
 import { ResultMessage } from './ResultMessage';
 
 export interface ProfileFormValues {
   keywords: string;
-  location: string;
+  areas: SearchArea[];
   includeTerms: string;
   excludeTerms: string;
   rejectThreshold: number;
@@ -24,10 +25,7 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
         Mots-clés de recherche <span className="font-normal text-gray-500">(séparés par des virgules ; vide = déduits du CV)</span>
         <input name="keywords" defaultValue={initial.keywords} className={input} />
       </label>
-      <label className="block text-sm font-medium">
-        Localisation
-        <input name="location" defaultValue={initial.location} required className={input} />
-      </label>
+      <AreasField initial={initial.areas} />
       <label className="block text-sm font-medium">
         L&apos;intitulé doit contenir l&apos;un de ces termes <span className="font-normal text-gray-500">(vide = pas de filtre)</span>
         <input name="includeTerms" defaultValue={initial.includeTerms} className={input} />
@@ -59,5 +57,61 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
       </button>
       <ResultMessage result={result} />
     </form>
+  );
+}
+
+/**
+ * Zones de recherche : une ligne par pays (+ ville facultative). L'état vit dans le navigateur
+ * et part au serveur sérialisé dans un champ caché : un <form> HTML ne sait pas envoyer
+ * une liste d'objets autrement.
+ */
+function AreasField({ initial }: { initial: SearchArea[] }) {
+  const [areas, setAreas] = useState<SearchArea[]>(initial.length ? initial : [{ country: 'fr', city: '' }]);
+  const update = (i: number, patch: Partial<SearchArea>) => setAreas(a => a.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+
+  return (
+    <fieldset className="rounded-md border p-4">
+      <legend className="px-1 text-sm font-medium">Zones de recherche</legend>
+      <p className="mb-3 text-xs text-gray-500">
+        Un pays par ligne. La ville affine la recherche Adzuna ; vide = tout le pays. Pour les pages carrières,
+        tout le pays est gardé. Le Luxembourg n&apos;a pas de base Adzuna : il est couvert par les pages carrières.
+      </p>
+      <input type="hidden" name="areas" value={JSON.stringify(areas)} />
+      <div className="space-y-2">
+        {areas.map((area, i) => (
+          <div key={i} className="flex gap-2">
+            <select
+              value={area.country}
+              onChange={e => update(i, { country: e.target.value as CountryCode })}
+              className="rounded-md border px-2 py-2 text-sm"
+            >
+              {COUNTRY_CODES.map(code => (
+                <option key={code} value={code}>{COUNTRIES[code].label}</option>
+              ))}
+            </select>
+            <input
+              value={area.city}
+              onChange={e => update(i, { city: e.target.value })}
+              placeholder="Ville (facultatif)"
+              className="flex-1 rounded-md border px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              disabled={areas.length === 1}
+              onClick={() => setAreas(a => a.filter((_, j) => j !== i))}
+              className="px-2 text-sm text-gray-500 hover:text-red-600 disabled:opacity-30"
+              aria-label="Retirer cette zone"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      {areas.length < 6 && (
+        <button type="button" onClick={() => setAreas(a => [...a, { country: 'lu', city: '' }])} className="mt-2 text-sm text-blue-700 hover:underline">
+          + Ajouter un pays
+        </button>
+      )}
+    </fieldset>
   );
 }

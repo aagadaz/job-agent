@@ -7,7 +7,8 @@ import {
 import { decrypt } from './lib/crypto';
 import { deriveKeywords } from './lib/cv-analyzer';
 import { dedupeAcrossSources } from './lib/dedupe';
-import { excludeByTitle, includeByTitle, matchesLocation } from './lib/prefilter';
+import { excludeByTitle, includeByTitle, keepInCountries } from './lib/prefilter';
+import { COUNTRIES, type SearchArea } from './lib/countries';
 import { scoreOffers } from './lib/scorer';
 import type { JobDetail } from './lib/types';
 import { normalizeUrl } from './lib/url';
@@ -20,16 +21,30 @@ const MAX_SCORED_PER_RUN = 150; // ≈ 5 min de notation et quelques centimes de
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
 
 /** Collecte toutes les sources en parallèle. Une source en panne n'empêche pas les autres. */
-async function collect(userId: string, keywords: string[], location: string): Promise<JobDetail[]> {
+async function collect(userId: string, keywords: string[], areas: SearchArea[]): Promise<JobDetail[]> {
   const companies = await getCompanies(userId);
+  const countries = [...new Set(areas.map(a => a.country))];
+
+  // Adzuna : une recherche par zone, dans la base du pays (s'il en a une)
+  const adzunaTasks = areas.flatMap(area => {
+    const adzunaCode = COUNTRIES[area.country].adzuna;
+    if (!adzunaCode) {
+      console.log(`   · Adzuna ne couvre pas ${COUNTRIES[area.country].label} : pages carrières uniquement`);
+      return [];
+    }
+    return [{
+      label: `Adzuna ${COUNTRIES[area.country].label}${area.city ? ` (${area.city})` : ''}`,
+      run: () => fetchAdzunaOffers(keywords, { country: adzunaCode, location: area.city }),
+    }];
+  });
 
   const tasks: { label: string; run: () => Promise<JobDetail[]> }[] = [
-    { label: 'Adzuna', run: () => fetchAdzunaOffers(keywords, { location }) },
+    ...adzunaTasks,
     ...companies.map(c => ({
       label: `${c.name} (${c.ats})`,
-      // Les pages carrières publient des postes dans le monde entier : filtre géographique
-      // Les gros ATS (Workday, SmartRecruiters) sont interrogés avec les mots-clés du profil
-      run: async () => matchesLocation((await fetchCompanyJobs(c, { keywords })) ?? [], location),
+      // Les pages carrières publient des postes dans le monde entier : on garde les pays voulus.
+      // Les gros ATS (Workday, SmartRecruiters) sont interrogés avec les mots-clés du profil.
+      run: async () => keepInCountries((await fetchCompanyJobs(c, { keywords })) ?? [], countries),
     })),
   ];
 
@@ -58,10 +73,12 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   const cvText = profile.cvText!;
 
   const keywords = profile.keywords.length > 0 ? profile.keywords : await deriveKeywords(client, cvText);
-  console.log(`   Mots-clés : ${keywords.join(', ')} · ${profile.location}`);
+  // Profil créé avant les zones : on retombe sur l'ancien champ ville, en France
+  const areas: SearchArea[] = profile.areas.length > 0 ? profile.areas : [{ country: 'fr', city: profile.location }];
+  console.log(`   Mots-clés : ${keywords.join(', ')} · ${areas.map(a => `${COUNTRIES[a.country].label}${a.city ? `/${a.city}` : ''}`).join(', ')}`);
 
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
-  const fetched = await collect(user.id, keywords, profile.location);
+  const fetched = await collect(user.id, keywords, areas);
   const unique = dedupeAcrossSources(fetched);
   const filtered = includeByTitle(excludeByTitle(unique, profile.excludeTerms), profile.includeTerms);
   const seen = await getSeenUrls(user.id);
