@@ -31,6 +31,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             Se connecter avec Google
           </button>
         </form>
+        <p className="mt-4 text-center text-xs text-gray-500">
+          En te connectant, tu acceptes notre{' '}
+          <a href="/confidentialite" className="underline">politique de confidentialité</a>.
+        </p>
       </div>
     </main>
   );
