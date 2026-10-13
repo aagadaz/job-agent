@@ -43,6 +43,13 @@
       "when": 1791633518107,
       "tag": "0005_salty_bromley",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791881103419,
+      "tag": "0006_smiling_inhumans",
+      "breakpoints": true
     }
   ]
 }

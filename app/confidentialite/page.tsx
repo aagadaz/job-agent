@@ -37,7 +37,7 @@ export default function PrivacyPage() {
 
       <Section title="Quelles données collectons-nous ?">
         <ul className="list-disc space-y-1 pl-5">
-          <li><b>Compte</b> : ton adresse e-mail et ton nom, transmis par Google lors de la connexion.</li>
+          <li><b>Compte</b> : ton adresse e-mail, et ton nom s&apos;il est transmis par Google lors de la connexion. Si tu te connectes par lien e-mail, une empreinte (hachage SHA-256) du lien (jamais le lien lui-même) est conservée 15 minutes au plus.</li>
           <li><b>CV</b> : le <b>texte</b> extrait de ton CV. Le fichier PDF lui-même n&apos;est pas conservé.</li>
           <li><b>Préférences de recherche</b> : mots-clés, zones (pays, villes), filtres, seuil de notation, entreprises suivies.</li>
           <li><b>Clé API Claude</b> : stockée <b>chiffrée</b> (AES-256-GCM) ; elle n&apos;est jamais réaffichée en clair.</li>
@@ -59,7 +59,7 @@ export default function PrivacyPage() {
         <p>Avec les seuls prestataires techniques nécessaires au service :</p>
         <ul className="list-disc space-y-1 pl-5">
           <li><b>Anthropic</b> (Claude) : le texte de ton CV et les offres sont envoyés à l&apos;API Claude, avec ta propre clé, pour les noter.</li>
-          <li><b>Google</b> : connexion (Google Sign-In) et, si tu l&apos;actives, écriture dans ton Google Sheet.</li>
+          <li><b>Google</b> : connexion (Google Sign-In), envoi des e-mails de connexion (Gmail) et, si tu l&apos;actives, écriture dans ton Google Sheet.</li>
           <li><b>Vercel</b> (hébergement du site), <b>Neon</b> (base de données), <b>GitHub</b> (exécution des recherches quotidiennes).</li>
           <li><b>Sources d&apos;offres</b> (Adzuna, pages carrières des entreprises) : elles ne reçoivent que des mots-clés de recherche, jamais ton identité ni ton CV.</li>
         </ul>

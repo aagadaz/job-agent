@@ -116,3 +116,17 @@ export const appSettings = pgTable('app_settings', {
   value: jsonb('value').notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ─── Liens magiques de connexion ───
+// On ne stocke JAMAIS le jeton lui-même, seulement son empreinte SHA-256 : une fuite de la base
+// ne permet pas de se connecter. Usage unique (usedAt) et durée de vie courte (expiresAt).
+export const loginTokens = pgTable('login_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: text('email').notNull(),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('login_tokens_email_created_idx').on(t.email, t.createdAt), // anti-abus : liens récents par e-mail
+]);

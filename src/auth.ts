@@ -1,5 +1,7 @@
 import NextAuth, { type DefaultSession } from 'next-auth';
 import Google from 'next-auth/providers/google';
+import Credentials from 'next-auth/providers/credentials';
+import { consumeLoginToken } from './db/login-tokens';
 import { admitUser, findUserIdByEmail } from './db/dashboard';
 import { getSettings } from './db/settings';
 
@@ -12,7 +14,22 @@ declare module 'next-auth' {
 
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: [Google], // lit AUTH_GOOGLE_ID et AUTH_GOOGLE_SECRET
+  providers: [
+    Google,
+    // Lien magique : le « mot de passe » est un jeton à usage unique reçu par e-mail.
+    // authorize() ne renvoie un utilisateur que si le jeton est valide ; ensuite les MÊMES
+    // callbacks que Google s'appliquent (plafond d'inscriptions, id interne dans le JWT).
+    Credentials({
+      id: 'magic-link',
+      credentials: { token: {} },
+      async authorize(credentials) {
+        const token = typeof credentials?.token === 'string' ? credentials.token : '';
+        if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null; // 32 octets en base64url = 43 caractères
+        const email = await consumeLoginToken(token);
+        return email ? { email } : null;
+      },
+    }),
+  ], // lit AUTH_GOOGLE_ID et AUTH_GOOGLE_SECRET
   session: { strategy: 'jwt' }, // session dans un cookie signé : aucune table de session en base
   pages: { signIn: '/login', error: '/login' },
   callbacks: {
