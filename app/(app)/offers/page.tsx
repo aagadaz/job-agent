@@ -6,7 +6,8 @@ import { describeRunError } from '@/lib/run-errors';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
 import { StatusSelect } from '../../components/StatusSelect';
-import { STATUSES, countOffersByCountry, listOffers, type ApplicationStatus } from '@/db/dashboard';
+import { STATUSES, countOffersByCountry, getUserWithProfile, listOffers, type ApplicationStatus } from '@/db/dashboard';
+import { searchMode } from '@/lib/search-mode';
 import { COUNTRY_CODES, countryLabel } from '@/lib/countries';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { isAdmin, requireUserId } from '@/lib/session';
@@ -27,11 +28,17 @@ export default async function OffersPage({
   const country = params.country === 'none' || COUNTRY_CODES.includes(params.country as never) ? params.country : undefined;
 
   const filters = { showRejected: showRejected || dismissed, dismissed };
-  const [rows, byCountry, run] = await Promise.all([
+  const [rows, byCountry, run, account] = await Promise.all([
     listOffers(userId, { ...filters, status, country }),
     countOffersByCountry(userId, filters),
     getReconciledLastRun(userId),
+    getUserWithProfile(userId),
   ]);
+  const mode = searchMode({
+    hasKey: !!account?.user.anthropicKeyEncrypted,
+    hasCv: !!account?.profile?.cvText,
+    keywords: account?.profile?.keywords ?? [],
+  });
   const total = byCountry.reduce((sum, c) => sum + c.n, 0);
 
   /** Lien qui change UN paramètre en gardant les autres (filtres combinables). */
@@ -59,6 +66,21 @@ export default async function OffersPage({
   return (
     <div className="space-y-4">
       <RunWatcher run={snapshot} />
+      {mode !== 'scored' && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          {mode === 'unscored' ? (
+            <>
+              <b>Mode sans clé :</b> tu reçois les offres qui correspondent à tes mots-clés, triées par date, sans note.{' '}
+              <Link href="/profile" className="underline">Ajoute une clé Claude et ton CV</Link> pour que chaque offre soit notée selon ton profil.
+            </>
+          ) : (
+            <>
+              Pour démarrer, <Link href="/profile" className="underline">indique tes mots-clés dans Profil</Link> (et,
+              si tu veux des offres notées, ton CV et une clé Claude).
+            </>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">{dismissed ? 'Corbeille' : 'Offres'} ({rows.length})</h1>

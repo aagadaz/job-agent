@@ -9,6 +9,7 @@ import {
 import { encrypt, maskSecret } from '@/lib/crypto';
 import { extractPdfText } from '@/lib/cv-analyzer';
 import { requireUserId } from '@/lib/session';
+import { NO_SEARCH_MESSAGE, searchMode } from '@/lib/search-mode';
 import { dispatchSearch, isGithubConfigured } from '@/lib/github';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { ensureApplicationsTab, parseSheetId, syncApplication } from '@/lib/sheets';
@@ -75,6 +76,15 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     }
     if (!cvText) return { ok: false, message: "Ce PDF ne contient pas de texte (scan ?) : colle le texte du CV." };
   }
+
+  // Le profil doit permettre AU MOINS un mode de recherche (cf. search-mode.ts)
+  const current = await getUserWithProfile(userId);
+  const mode = searchMode({
+    hasKey: !!current?.user.anthropicKeyEncrypted,
+    hasCv: !!(cvText ?? current?.profile?.cvText),
+    keywords: parsed.data.keywords,
+  });
+  if (!mode) return { ok: false, message: 'Sans clé Claude, indique au moins un mot-clé : ils ne peuvent pas être déduits du CV.' };
 
   await saveProfile(userId, { ...parsed.data, cvText });
   revalidatePath('/profile');
@@ -248,9 +258,12 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
 
   // 1) Garde-fous AVANT de dépenser quoi que ce soit (minutes GitHub, crédits Claude)
   const row = await getUserWithProfile(userId);
-  if (!row?.user.anthropicKeyEncrypted || !row.profile?.cvText) {
-    return { ok: false, message: 'Complète ton profil (CV + clé Claude) avant de lancer une recherche.' };
-  }
+  const mode = searchMode({
+    hasKey: !!row?.user.anthropicKeyEncrypted,
+    hasCv: !!row?.profile?.cvText,
+    keywords: row?.profile?.keywords ?? [],
+  });
+  if (!mode) return { ok: false, message: NO_SEARCH_MESSAGE };
   if (!isGithubConfigured()) {
     return { ok: false, message: 'Lancement manuel non configuré (GITHUB_DISPATCH_TOKEN / GITHUB_REPO).' };
   }

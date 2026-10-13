@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 import { db } from './client';
 import { users, profiles, offers, userOffers, runs, companies } from './schema';
 import type { JobDetail, ScoredOffer } from '../lib/types';
@@ -7,7 +7,8 @@ import { normalizeUrl } from '../lib/url';
 // Toutes les requêtes SQL du worker sont ici : le reste du code ne parle jamais SQL.
 
 /**
- * Utilisateurs prêts pour le worker : un profil avec CV ET une clé Claude enregistrée.
+ * Utilisateurs prêts pour le worker (cf. src/lib/search-mode.ts) : clé Claude + CV (mode noté),
+ * ou au moins un mot-clé (mode sans clé). Le worker recalcule le mode exact pour chacun.
  * `onlyUserId` : lancement manuel depuis l'interface, pour un seul utilisateur.
  */
 export async function getActiveUsers(onlyUserId?: string) {
@@ -17,8 +18,10 @@ export async function getActiveUsers(onlyUserId?: string) {
     .innerJoin(profiles, eq(profiles.userId, users.id))
     .where(
       and(
-        isNotNull(users.anthropicKeyEncrypted),
-        isNotNull(profiles.cvText),
+        or(
+          and(isNotNull(users.anthropicKeyEncrypted), isNotNull(profiles.cvText)),
+          sql`cardinality(${profiles.keywords}) > 0`,
+        ),
         onlyUserId ? eq(users.id, onlyUserId) : undefined, // and() ignore les undefined
       ),
     );

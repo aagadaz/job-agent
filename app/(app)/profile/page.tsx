@@ -39,7 +39,11 @@ export default async function ProfilePage() {
       </section>
       <section className="h-fit rounded-xl border bg-white p-6">
         <h2 className="mb-1 text-lg font-semibold">Clé API Claude</h2>
-        <p className="mb-4 text-sm text-gray-600">Chiffrée avant d&apos;être enregistrée. Les appels de notation sont facturés sur cette clé.</p>
+        <p className="mb-4 text-sm text-gray-600">
+          <b>Facultative.</b> Sans clé, tu reçois quand même les offres correspondant à tes mots-clés, mais elles ne
+          sont pas notées. Avec une clé (et ton CV), chaque offre est notée et analysée par Claude. Chiffrée avant
+          d&apos;être enregistrée ; les appels de notation sont facturés sur cette clé.
+        </p>
         <ApiKeyForm masked={masked} />
       </section>
       <section className="h-fit rounded-xl border bg-white p-6 lg:col-start-2">

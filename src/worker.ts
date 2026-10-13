@@ -14,6 +14,7 @@ import type { JobDetail } from './lib/types';
 import { normalizeUrl } from './lib/url';
 import { mapPool } from './lib/concurrency';
 import { getSettings } from './db/settings';
+import { searchMode } from './lib/search-mode';
 import { fetchAdzunaOffers } from './sources/adzuna';
 import { fetchCompanyJobs } from './sources/ats';
 
@@ -68,12 +69,15 @@ async function collect(userId: string, keywords: string[], areas: SearchArea[]):
 
 /** Pipeline complet pour UN utilisateur. Lève une erreur en cas d'échec. */
 async function processUser({ user, profile }: ActiveUser): Promise<Record<string, number>> {
-  const client = new Anthropic({ apiKey: decrypt(user.anthropicKeyEncrypted!) });
-  const cvText = profile.cvText!;
+  const mode = searchMode({ hasKey: !!user.anthropicKeyEncrypted, hasCv: !!profile.cvText, keywords: profile.keywords });
+  if (!mode) throw new Error('Profil incomplet : aucun mot-clé et pas de clé Claude + CV');
 
-  const keywords = profile.keywords.length > 0 ? profile.keywords : await deriveKeywords(client, cvText);
+  // Le client Claude n'existe qu'en mode noté : sans clé, aucun appel payant n'est possible
+  const client = mode === 'scored' ? new Anthropic({ apiKey: decrypt(user.anthropicKeyEncrypted!) }) : null;
+  const keywords = profile.keywords.length > 0 ? profile.keywords : await deriveKeywords(client!, profile.cvText!);
   // Profil créé avant les zones : on retombe sur l'ancien champ ville, en France
   const areas: SearchArea[] = profile.areas.length > 0 ? profile.areas : [{ country: 'fr', city: profile.location }];
+  console.log(`   Mode : ${mode === 'scored' ? 'noté par Claude' : 'sans clé (non noté)'}`);
   console.log(`   Mots-clés : ${keywords.join(', ')} · ${areas.map(a => `${COUNTRIES[a.country].label}${a.city ? `/${a.city}` : ''}`).join(', ')}`);
 
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
@@ -86,16 +90,22 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
 
   // Plafond par exécution : le 1er passage sur 100 entreprises peut ramener des centaines
   // d'offres. Le reste sera noté aux exécutions suivantes (pas encore "vu", donc toujours frais).
-  const { maxScoredPerRun } = await getSettings(); // réglable depuis /admin
-  const batch = fresh.slice(0, maxScoredPerRun);
+  // Sans notation pour trier, le plafond est plus bas : le fil resterait lisible
+  const { maxScoredPerRun, maxUnscoredPerRun } = await getSettings(); // réglables depuis /admin
+  const batch = fresh.slice(0, mode === 'scored' ? maxScoredPerRun : maxUnscoredPerRun);
   if (fresh.length > batch.length) console.log(`   ⏳ ${fresh.length - batch.length} offres reportées à la prochaine exécution`);
   const offerIds = await upsertOffers(batch);
-  const scored = await scoreOffers(client, cvText, batch);
+  // Mode sans clé : même suite du pipeline, avec une notation « vide » (scoring: null).
+  // Une offre non notée n'est jamais écartée par le seuil (cf. insertUserOffers).
+  const scored = client
+    ? await scoreOffers(client, profile.cvText!, batch)
+    : batch.map(o => ({ ...o, scoring: null }));
   const { kept, rejected } = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
 
   return {
     fetched: fetched.length, unique: unique.length, afterFilters: filtered.length,
     new: batch.length, deferred: fresh.length - batch.length, kept, rejected,
+    unscored: mode === 'unscored' ? 1 : 0,
   };
 }
 
@@ -129,7 +139,7 @@ async function main() {
 
   const activeUsers = await getActiveUsers(onlyUserId);
   if (onlyUserId && activeUsers.length === 0) {
-    const message = 'Profil incomplet : CV ou clé Claude manquant';
+    const message = 'Profil incomplet : aucun mot-clé et pas de clé Claude + CV';
     // On clôt la ligne créée au clic, sinon l'interface afficherait « en cours » indéfiniment
     if (presetRunId) await finishRun(presetRunId, { status: 'error', error: message });
     throw new Error(`${message} (utilisateur ${onlyUserId})`);

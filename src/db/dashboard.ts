@@ -153,7 +153,9 @@ export async function listOffers(userId: string, opts: OfferFilters & { status?:
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
     .where(and(...conditions))
-    .orderBy(sql`${userOffers.score} desc nulls last`, desc(userOffers.createdAt))
+    // Score d'abord (offres non notées à la fin), puis date de publication : en mode sans clé,
+    // toutes les notes sont nulles et le fil devient chronologique.
+    .orderBy(sql`${userOffers.score} desc nulls last`, desc(offers.datePosted), desc(userOffers.createdAt))
     .limit(300);
 }
 

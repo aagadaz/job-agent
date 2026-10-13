@@ -17,6 +17,7 @@ export async function updateSettings(_prev: AdminResult | null, form: FormData):
     signupOpen: form.get('signupOpen') === 'on', // case à cocher : présente = cochée
     maxUsers: Number(form.get('maxUsers')),
     maxScoredPerRun: Number(form.get('maxScoredPerRun')),
+    maxUnscoredPerRun: Number(form.get('maxUnscoredPerRun')),
   });
   if (!parsed.success) {
     const issue = parsed.error.issues[0];

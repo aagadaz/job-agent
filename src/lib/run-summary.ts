@@ -6,7 +6,7 @@ export interface RunSnapshot {
   status: 'running' | 'success' | 'error';
   error: string | null;    // message POUR L'UTILISATEUR (déjà traduit côté serveur)
   details?: string | null; // erreur technique brute : seulement pour les administrateurs
-  stats: { fetched?: number; new?: number; kept?: number; rejected?: number } | null;
+  stats: { fetched?: number; new?: number; kept?: number; rejected?: number; unscored?: number } | null;
 }
 
 export interface RunSummary {
@@ -33,6 +33,9 @@ export function summarizeRun(run: RunSnapshot): RunSummary {
     return (run.stats?.fetched ?? 0) === 0
       ? { tone: 'info', text: 'Aucune offre trouvée par les sources. Élargis tes mots-clés ou ta localisation.' }
       : { tone: 'info', text: 'Aucune nouvelle offre : tout ce qui a été trouvé était déjà dans ta liste.' };
+  }
+  if (run.stats?.unscored) {
+    return { tone: 'success', text: `${plural(fresh, 'nouvelle offre ajoutée', 'nouvelles offres ajoutées')} (non notées : ajoute une clé Claude dans Profil pour les noter).` };
   }
   if (kept === 0) {
     return { tone: 'info', text: `${plural(fresh, 'nouvelle offre', 'nouvelles offres')}, ${fresh > 1 ? 'toutes écartées' : 'écartée'} (score sous ton seuil).` };

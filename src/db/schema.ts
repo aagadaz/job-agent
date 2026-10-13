@@ -94,7 +94,7 @@ export const runs = pgTable('runs', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   status: runStatusEnum('status').notNull().default('running'),
-  stats: jsonb('stats').$type<{ fetched?: number; afterFilters?: number; new?: number; kept?: number; rejected?: number }>(),
+  stats: jsonb('stats').$type<{ fetched?: number; afterFilters?: number; new?: number; kept?: number; rejected?: number; unscored?: number }>(),
   error: text('error'),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp('finished_at', { withTimezone: true }),

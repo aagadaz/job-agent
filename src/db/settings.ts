@@ -9,6 +9,7 @@ export const SettingsSchema = z.object({
   signupOpen: z.boolean().default(true),
   maxUsers: z.number().int().min(1).max(100).default(Number(process.env.MAX_USERS) || 4),
   maxScoredPerRun: z.number().int().min(10).max(500).default(150),
+  maxUnscoredPerRun: z.number().int().min(10).max(500).default(100), // mode sans clé
 });
 export type Settings = z.infer<typeof SettingsSchema>;
 

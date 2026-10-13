@@ -26,6 +26,11 @@ export function SettingsForm({ initial, userCount }: { initial: Settings; userCo
         <span className="font-normal text-gray-500">(au-delà : reportées au lendemain ; borne la durée et le coût Claude)</span>
         <input name="maxScoredPerRun" type="number" min={10} max={500} defaultValue={initial.maxScoredPerRun} className={`${input} block`} />
       </label>
+      <label className="block text-sm font-medium">
+        Nouvelles offres au maximum par recherche, comptes sans clé Claude{' '}
+        <span className="font-normal text-gray-500">(sans notation pour trier, on garde un fil lisible)</span>
+        <input name="maxUnscoredPerRun" type="number" min={10} max={500} defaultValue={initial.maxUnscoredPerRun} className={`${input} block`} />
+      </label>
       <button disabled={pending} className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
         {pending ? 'Enregistrement…' : 'Enregistrer'}
       </button>

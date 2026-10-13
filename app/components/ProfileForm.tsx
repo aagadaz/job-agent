@@ -22,7 +22,7 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
   return (
     <form action={formAction} className="space-y-4">
       <label className="block text-sm font-medium">
-        Mots-clés de recherche <span className="font-normal text-gray-500">(séparés par des virgules ; vide = déduits du CV)</span>
+        Mots-clés de recherche <span className="font-normal text-gray-500">(séparés par des virgules ; vide = déduits du CV par Claude, <b>obligatoires sans clé Claude</b>)</span>
         <input name="keywords" defaultValue={initial.keywords} className={input} />
       </label>
       <AreasField initial={initial.areas} />
