@@ -126,7 +126,36 @@ export async function countOffersByCountry(userId: string, opts: OfferFilters) {
   return rows.map(r => ({ country: r.country ?? 'none', n: r.n })).sort((a, b) => b.n - a.n);
 }
 
-export async function listOffers(userId: string, opts: OfferFilters & { status?: ApplicationStatus; country?: string }) {
+// ─── Tri du fil ───
+// Liste FERMÉE de tris : la valeur vient de l'URL (?sort=…), on ne l'insère jamais telle quelle
+// dans le SQL, on choisit parmi des ORDER BY écrits à l'avance (liste blanche).
+export const SORTS = ['recent', 'score', 'posted'] as const;
+export type OfferSort = (typeof SORTS)[number];
+export const SORT_LABELS: Record<OfferSort, string> = {
+  recent: 'Plus récentes',
+  score: 'Meilleure note',
+  posted: 'Date de publication',
+};
+
+function orderFor(sort: OfferSort) {
+  switch (sort) {
+    // Ordre d'arrivée dans TON fil : les offres du dernier passage remontent en haut ;
+    // à arrivée égale (même passage), la meilleure note d'abord.
+    case 'recent':
+      return [desc(userOffers.createdAt), sql`${userOffers.score} desc nulls last`];
+    case 'score':
+      return [sql`${userOffers.score} desc nulls last`, sql`${offers.datePosted} desc nulls last`, desc(userOffers.createdAt)];
+    // Date annoncée par l'employeur, texte ISO (AAAA-MM-JJ) : l'ordre alphabétique = l'ordre chronologique ;
+    // vide quand la source ne la donne pas → en fin de liste (la chaîne vide est la plus « petite »)
+    case 'posted':
+      return [sql`${offers.datePosted} desc nulls last`, desc(userOffers.createdAt)];
+  }
+}
+
+export async function listOffers(
+  userId: string,
+  opts: OfferFilters & { status?: ApplicationStatus; country?: string; sort?: OfferSort },
+) {
   const conditions = feedConditions(userId, opts);
   // 'none' = offres dont le pays n'a pas pu être déterminé
   if (opts.country) conditions.push(opts.country === 'none' ? isNull(offers.country) : eq(offers.country, opts.country));
@@ -149,13 +178,12 @@ export async function listOffers(userId: string, opts: OfferFilters & { status?:
       missingSkills: userOffers.missingSkills,
       status: userOffers.status,
       rejected: userOffers.rejected,
+      addedAt: userOffers.createdAt, // date d'arrivée de l'offre dans le fil de CET utilisateur
     })
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
     .where(and(...conditions))
-    // Score d'abord (offres non notées à la fin), puis date de publication : en mode sans clé,
-    // toutes les notes sont nulles et le fil devient chronologique.
-    .orderBy(sql`${userOffers.score} desc nulls last`, desc(offers.datePosted), desc(userOffers.createdAt))
+    .orderBy(...orderFor(opts.sort ?? 'recent'))
     .limit(300);
 }
 

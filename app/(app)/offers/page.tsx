@@ -6,7 +6,10 @@ import { describeRunError } from '@/lib/run-errors';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
 import { StatusSelect } from '../../components/StatusSelect';
-import { STATUSES, countOffersByCountry, getUserWithProfile, listOffers, type ApplicationStatus } from '@/db/dashboard';
+import {
+  SORTS, SORT_LABELS, STATUSES, countOffersByCountry, getUserWithProfile, listOffers,
+  type ApplicationStatus, type OfferSort,
+} from '@/db/dashboard';
 import { searchMode } from '@/lib/search-mode';
 import { COUNTRY_CODES, countryLabel } from '@/lib/countries';
 import { getReconciledLastRun } from '@/lib/run-status';
@@ -15,7 +18,7 @@ import { isAdmin, requireUserId } from '@/lib/session';
 export default async function OffersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ rejected?: string; status?: string; dismissed?: string; country?: string }>;
+  searchParams: Promise<{ rejected?: string; status?: string; dismissed?: string; country?: string; sort?: string }>;
 }) {
   const userId = await requireUserId();
   const params = await searchParams;
@@ -27,9 +30,12 @@ export default async function OffersPage({
   // Pays venant de l'URL : accepté seulement s'il est connu (ou 'none' = pays non déterminé)
   const country = params.country === 'none' || COUNTRY_CODES.includes(params.country as never) ? params.country : undefined;
 
+  // Tri : 'recent' par défaut (les nouvelles offres en haut) ; toute valeur inconnue est ignorée
+  const sort: OfferSort = SORTS.find(s => s === params.sort) ?? 'recent';
+
   const filters = { showRejected: showRejected || dismissed, dismissed };
   const [rows, byCountry, run, account] = await Promise.all([
-    listOffers(userId, { ...filters, status, country }),
+    listOffers(userId, { ...filters, status, country, sort }),
     countOffersByCountry(userId, filters),
     getReconciledLastRun(userId),
     getUserWithProfile(userId),
@@ -40,6 +46,12 @@ export default async function OffersPage({
     keywords: account?.profile?.keywords ?? [],
   });
   const total = byCountry.reduce((sum, c) => sum + c.n, 0);
+  // « Nouvelle » = arrivée dans le fil depuis moins de 24 h (donc par la recherche du jour)
+  const now = Date.now();
+  const isNew = (addedAt: Date) => now - addedAt.getTime() < 24 * 3600_000;
+  const newCount = dismissed ? 0 : rows.filter(o => isNew(o.addedAt)).length;
+  // Sans note (mode sans clé), trier par note n'a pas de sens : on ne propose pas ce tri
+  const sortOptions = SORTS.filter(s => s !== 'score' || mode === 'scored');
 
   /** Lien qui change UN paramètre en gardant les autres (filtres combinables). */
   const href = (patch: Record<string, string | undefined>) => {
@@ -83,7 +95,14 @@ export default async function OffersPage({
       )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">{dismissed ? 'Corbeille' : 'Offres'} ({rows.length})</h1>
+          <h1 className="text-lg font-semibold">
+            {dismissed ? 'Corbeille' : 'Offres'} ({rows.length})
+            {newCount > 0 && (
+              <span className="ml-2 rounded-full bg-blue-600 px-2 py-0.5 align-middle text-xs font-medium text-white">
+                {newCount} nouvelle{newCount > 1 ? 's' : ''}
+              </span>
+            )}
+          </h1>
           {run && (
             <p className="text-sm text-gray-500">
               Dernière recherche : {run.startedAt.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} ·{' '}
@@ -101,13 +120,14 @@ export default async function OffersPage({
           </div>
         </div>
         <nav className="flex gap-2 text-sm">
-          <Link href="/offers" className="rounded-md border bg-white px-3 py-1">Toutes</Link>
-          <Link href="/offers?status=a_traiter" className="rounded-md border bg-white px-3 py-1">À traiter</Link>
-          <Link href="/offers?status=postule" className="rounded-md border bg-white px-3 py-1">Postulées</Link>
-          <Link href={showRejected ? '/offers' : '/offers?rejected=1'} className="rounded-md border bg-white px-3 py-1">
+          {/* Ces liens changent de vue mais CONSERVENT le tri choisi */}
+          <Link href={href({ status: undefined, rejected: undefined, dismissed: undefined, country: undefined })} className="rounded-md border bg-white px-3 py-1">Toutes</Link>
+          <Link href={href({ status: 'a_traiter', dismissed: undefined })} className="rounded-md border bg-white px-3 py-1">À traiter</Link>
+          <Link href={href({ status: 'postule', dismissed: undefined })} className="rounded-md border bg-white px-3 py-1">Postulées</Link>
+          <Link href={href({ rejected: showRejected ? undefined : '1' })} className="rounded-md border bg-white px-3 py-1">
             {showRejected ? 'Masquer les écartées' : 'Voir les écartées'}
           </Link>
-          <Link href={dismissed ? '/offers' : '/offers?dismissed=1'} className="rounded-md border bg-white px-3 py-1">
+          <Link href={href({ dismissed: dismissed ? undefined : '1', status: undefined })} className="rounded-md border bg-white px-3 py-1">
             {dismissed ? '← Retour au fil' : 'Corbeille'}
           </Link>
         </nav>
@@ -131,6 +151,23 @@ export default async function OffersPage({
         </nav>
       )}
 
+      {/* Tri : de simples liens (?sort=…), la page est recalculée côté serveur */}
+      {rows.length > 1 && (
+        <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="Trier les offres">
+          <span className="text-gray-500">Trier par :</span>
+          {sortOptions.map(s => (
+            <Link
+              key={s}
+              href={href({ sort: s === 'recent' ? undefined : s })}
+              aria-current={sort === s ? 'true' : undefined}
+              className={`rounded-full px-3 py-1 ${sort === s ? 'bg-gray-900 text-white' : 'border bg-white'}`}
+            >
+              {SORT_LABELS[s]}
+            </Link>
+          ))}
+        </nav>
+      )}
+
       {rows.length === 0 ? (
         <p className="rounded-xl border bg-white p-6 text-sm text-gray-500">
           {dismissed
@@ -145,6 +182,9 @@ export default async function OffersPage({
                 <ScoreBadge score={o.score} />
                 <div className="min-w-0 flex-1">
                   {/* Le titre ouvre la fiche complète ; ↗ ouvre directement l'annonce d'origine */}
+                  {!dismissed && isNew(o.addedAt) && (
+                    <span className="mr-2 rounded bg-blue-100 px-1.5 py-0.5 align-middle text-xs font-semibold text-blue-800">Nouveau</span>
+                  )}
                   <Link href={`/offers/${o.offerId}`} className="font-medium hover:underline">
                     {o.title}
                   </Link>
@@ -153,7 +193,8 @@ export default async function OffersPage({
                   </a>
                   <p className="text-sm text-gray-600">
                     {o.company} · {o.location || 'Lieu non précisé'} · <b className="font-medium">{countryLabel(o.country)}</b> · {o.source}
-                    {o.datePosted && ` · ${o.datePosted}`}
+                    {o.datePosted && ` · publiée le ${o.datePosted}`}
+                    {` · ajoutée le ${o.addedAt.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })}`}
                   </p>
                   {o.justification && <p className="mt-2 text-sm">{o.justification}</p>}
                   <div className="mt-2 flex flex-wrap gap-1 text-xs">
