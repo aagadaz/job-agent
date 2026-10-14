@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { pool } from './db/client';
 import {
   getActiveUsers, getCompanies, getSeenUrls, upsertOffers, insertUserOffers, startRun, finishRun,
+  touchOffers, reconcileFeed,
 } from './db/repository';
 import { decrypt } from './lib/crypto';
 import { deriveKeywords } from './lib/cv-analyzer';
@@ -12,6 +13,7 @@ import { COUNTRIES, type SearchArea } from './lib/countries';
 import { scoreOffers } from './lib/scorer';
 import type { JobDetail } from './lib/types';
 import { normalizeUrl } from './lib/url';
+import { requiredYears, tooMuchExperience } from './lib/experience';
 import { mapPool } from './lib/concurrency';
 import { getSettings } from './db/settings';
 import { searchMode } from './lib/search-mode';
@@ -83,6 +85,9 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
   const fetched = await collect(user.id, keywords, areas);
   const unique = dedupeAcrossSources(fetched);
+  // Toutes les offres renvoyées sont « encore en ligne », y compris celles déjà vues :
+  // c'est ce qui permet ensuite de repérer celles qui ont disparu (= probablement fermées)
+  await touchOffers(unique.map(o => o.url));
   const filtered = includeByTitle(excludeByTitle(unique, profile.excludeTerms), profile.includeTerms);
   const seen = await getSeenUrls(user.id);
   const fresh = filtered.filter(o => !seen.has(normalizeUrl(o.url)));
@@ -95,17 +100,28 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   const batch = fresh.slice(0, mode === 'scored' ? maxScoredPerRun : maxUnscoredPerRun);
   if (fresh.length > batch.length) console.log(`   ⏳ ${fresh.length - batch.length} offres reportées à la prochaine exécution`);
   const offerIds = await upsertOffers(batch);
+  // Filtre d'expérience AVANT Claude : inutile de payer la notation d'une offre « 8 ans+ »
+  const maxYears = profile.maxExperienceYears;
+  const tooSenior = batch.filter(o => tooMuchExperience(requiredYears(o.title, o.description, o.qualifications), maxYears));
+  const toScore = batch.filter(o => !tooSenior.includes(o));
+  if (tooSenior.length > 0) console.log(`   🎓 ${tooSenior.length} offres exigent plus de ${maxYears} ans d'expérience (non notées)`);
   // Mode sans clé : même suite du pipeline, avec une notation « vide » (scoring: null).
   // Une offre non notée n'est jamais écartée par le seuil (cf. insertUserOffers).
   const scored = client
-    ? await scoreOffers(client, profile.cvText!, batch)
+    ? [...(await scoreOffers(client, profile.cvText!, toScore)), ...tooSenior.map(o => ({ ...o, scoring: null }))]
     : batch.map(o => ({ ...o, scoring: null }));
-  const { kept, rejected } = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
+  const inserted = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
+  // Puis on (re)classe tout le fil : expérience trop élevée, offres disparues des sources
+  const feed = await reconcileFeed(user.id, maxYears);
+  console.log(`   Fil : ${feed.experience} écartées (expérience), ${feed.expired} probablement fermées, ${feed.restored} réintégrées`);
+  const kept = inserted.kept - tooSenior.length;
+  const rejected = inserted.rejected + tooSenior.length;
 
   return {
     fetched: fetched.length, unique: unique.length, afterFilters: filtered.length,
     new: batch.length, deferred: fresh.length - batch.length, kept, rejected,
     unscored: mode === 'unscored' ? 1 : 0,
+    tooSenior: tooSenior.length, expired: feed.expired,
   };
 }
 

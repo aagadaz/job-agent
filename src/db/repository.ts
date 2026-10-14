@@ -1,8 +1,10 @@
-import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { db } from './client';
 import { users, profiles, offers, userOffers, runs, companies } from './schema';
 import type { JobDetail, ScoredOffer } from '../lib/types';
 import { normalizeUrl } from '../lib/url';
+import { requiredYears, tooMuchExperience } from '../lib/experience';
+import type { RejectReason } from './schema';
 
 // Toutes les requêtes SQL du worker sont ici : le reste du code ne parle jamais SQL.
 
@@ -96,6 +98,7 @@ export async function insertUserOffers(
     const offerId = offerIds.get(normalizeUrl(o.url));
     if (!offerId) return [];
     const isRejected = o.scoring !== null && o.scoring.score <= rejectThreshold;
+    // Les autres motifs (expérience, offre fermée) sont posés juste après par reconcileFeed
     isRejected ? rejected++ : kept++;
     return [{
       userId,
@@ -106,6 +109,8 @@ export async function insertUserOffers(
       strengths: o.scoring?.strengths ?? [],
       missingSkills: o.scoring?.missingSkills ?? [],
       rejected: isRejected,
+      rejectReason: isRejected ? ('score' as const) : null,
+      requiredYears: requiredYears(o.title, o.description, o.qualifications),
     }];
   });
 
@@ -128,4 +133,99 @@ export async function finishRun(
     .update(runs)
     .set({ status: outcome.status, stats: outcome.stats, error: outcome.error, finishedAt: new Date() })
     .where(eq(runs.id, runId));
+}
+
+// ─── Fraîcheur des offres ───
+
+/**
+ * Deux règles, car les sources ne disent pas la même chose :
+ *  - pages carrières (ATS) : on reçoit la liste COMPLÈTE des postes ouverts. Une offre absente
+ *    depuis STALE_AFTER_DAYS jours a été retirée par l'employeur → fermée (fiable) ;
+ *  - agrégateurs (Adzuna) : on ne reçoit que les 100 plus récentes par mot-clé. Une absence ne
+ *    prouve rien ; on se rabat sur l'ÂGE : publiée il y a plus de AGGREGATOR_MAX_AGE_DAYS jours
+ *    → probablement pourvue (les agrégateurs gardent souvent des annonces déjà closes).
+ */
+export const STALE_AFTER_DAYS = 3;
+export const AGGREGATOR_MAX_AGE_DAYS = 30;
+const AGGREGATORS = ['adzuna'];
+
+/**
+ * « Cette offre est toujours en ligne » : met à jour fetched_at de toutes les offres DÉJÀ en
+ * base que les sources viennent de renvoyer (les nouvelles l'ont via upsertOffers).
+ * Un seul paramètre tableau (= ANY($1)) plutôt qu'un IN (…) à N paramètres : PostgreSQL
+ * plafonne à 65 535 paramètres par requête, et 100 pages carrières peuvent en dépasser 10 000.
+ */
+export async function touchOffers(urls: string[]): Promise<void> {
+  const unique = [...new Set(urls.map(normalizeUrl))];
+  if (unique.length === 0) return;
+  // sql.param() : le tableau part comme UNE valeur (tableau PostgreSQL). Sans lui, Drizzle
+  // « déplie » un tableau JS en liste ($1, $2, …) — c'est ce qu'il fait pour IN (…).
+  await db.execute(sql`update offers set fetched_at = now() where url = any(${sql.param(unique)}::text[])`);
+}
+
+/**
+ * Recalcule les motifs d'écart « automatiques » (expérience, offre fermée) du fil d'un
+ * utilisateur. Rejouée à chaque passage, donc RÉVERSIBLE : une offre redevenue visible chez
+ * la source, ou une limite d'expérience relevée dans le profil, ramène l'offre dans le fil.
+ *
+ * Ne touche jamais : les offres écartées par la note (décision de Claude), celles que
+ * l'utilisateur a supprimées, ni celles dont il a changé le statut (il y a postulé, etc.).
+ */
+export async function reconcileFeed(userId: string, maxYears: number | null) {
+  const rows = await db
+    .select({
+      offerId: userOffers.offerId,
+      rejectReason: userOffers.rejectReason,
+      requiredYears: userOffers.requiredYears,
+      title: offers.title,
+      description: offers.description,
+      qualifications: offers.qualifications,
+      // date_posted est un texte ISO (« 2026-10-01T09:30:00Z ») : la comparaison de chaînes
+      // suit l'ordre chronologique ; '' (date inconnue) n'est jamais considérée trop vieille.
+      stale: sql<boolean>`case
+        when ${offers.source} = any(${sql.param(AGGREGATORS)}::text[])
+          then ${offers.datePosted} <> '' and ${offers.datePosted} < to_char(now() - make_interval(days => ${AGGREGATOR_MAX_AGE_DAYS}), 'YYYY-MM-DD')
+        else ${offers.fetchedAt} < now() - make_interval(days => ${STALE_AFTER_DAYS})
+      end`,
+    })
+    .from(userOffers)
+    .innerJoin(offers, eq(offers.id, userOffers.offerId))
+    .where(and(
+      eq(userOffers.userId, userId),
+      eq(userOffers.status, 'a_traiter'),
+      isNull(userOffers.dismissedAt),
+      or(
+        // retenues… (rejected = false : les offres écartées par la note AVANT l'ajout de
+        // reject_reason ont rejected = true et un motif null ; on ne doit pas les ressusciter)
+        and(isNull(userOffers.rejectReason), eq(userOffers.rejected, false)),
+        // …ou écartées par un motif automatique, donc réévaluable
+        inArray(userOffers.rejectReason, ['experience', 'expired']),
+      ),
+    ));
+
+  // On regroupe par décision : 3 UPDATE au plus, quel que soit le nombre d'offres
+  const groups = new Map<RejectReason | null, string[]>();
+  const yearsToSave: { offerId: string; years: number }[] = [];
+  for (const r of rows) {
+    // Offres d'avant cette fonctionnalité : années jamais calculées → on les calcule maintenant
+    const years = r.requiredYears ?? requiredYears(r.title, r.description, r.qualifications);
+    if (r.requiredYears === null && years !== null) yearsToSave.push({ offerId: r.offerId, years });
+    const reason: RejectReason | null = tooMuchExperience(years, maxYears) ? 'experience' : r.stale ? 'expired' : null;
+    if (reason === r.rejectReason) continue; // déjà dans le bon état : rien à écrire
+    groups.set(reason, [...(groups.get(reason) ?? []), r.offerId]);
+  }
+
+  for (const [reason, ids] of groups) {
+    await db
+      .update(userOffers)
+      .set({ rejected: reason !== null, rejectReason: reason })
+      .where(and(eq(userOffers.userId, userId), inArray(userOffers.offerId, ids)));
+  }
+  for (const { offerId, years } of yearsToSave) {
+    await db.update(userOffers).set({ requiredYears: years })
+      .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
+  }
+
+  const count = (reason: RejectReason) => groups.get(reason)?.length ?? 0;
+  return { experience: count('experience'), expired: count('expired'), restored: groups.get(null)?.length ?? 0 };
 }

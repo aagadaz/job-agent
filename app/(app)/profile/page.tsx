@@ -33,6 +33,8 @@ export default async function ProfilePage() {
             includeTerms: profile?.includeTerms.join(', ') ?? 'data, machine learning, ml, ia, ai, llm, nlp, mlops',
             excludeTerms: profile?.excludeTerms.join(', ') ?? 'senior, lead, principal, staff, head of, director',
             rejectThreshold: profile?.rejectThreshold ?? 35,
+            // undefined (pas encore de profil) → défaut 5 ; null (choisi) → pas de limite
+            maxExperienceYears: profile === null || profile === undefined ? 5 : profile.maxExperienceYears,
             cvChars: profile?.cvText?.length ?? 0,
           }}
         />

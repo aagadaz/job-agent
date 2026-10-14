@@ -62,6 +62,7 @@ export interface ProfileInput {
   includeTerms: string[];
   excludeTerms: string[];
   rejectThreshold: number;
+  maxExperienceYears: number | null; // null = pas de limite
   cvText?: string; // absent = on garde le CV actuel
 }
 
@@ -178,6 +179,8 @@ export async function listOffers(
       missingSkills: userOffers.missingSkills,
       status: userOffers.status,
       rejected: userOffers.rejected,
+      rejectReason: userOffers.rejectReason,
+      requiredYears: userOffers.requiredYears,
       addedAt: userOffers.createdAt, // date d'arrivée de l'offre dans le fil de CET utilisateur
     })
     .from(userOffers)

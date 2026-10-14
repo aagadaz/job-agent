@@ -46,6 +46,12 @@ const ProfileSchema = z.object({
   includeTerms: csv,
   excludeTerms: csv,
   rejectThreshold: z.coerce.number().int().min(0).max(100),
+  // Champ vide = pas de limite. Attention : z.coerce.number() transformerait "" en 0 (Number("") === 0) !
+  maxExperienceYears: z
+    .string()
+    .trim()
+    .transform(s => (s === '' ? null : Number(s)))
+    .pipe(z.number().int('Nombre d\u2019années entier attendu').min(0).max(30).nullable()),
   cvText: z.string().optional(),
 });
 
@@ -60,6 +66,7 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     includeTerms: form.get('includeTerms') ?? '',
     excludeTerms: form.get('excludeTerms') ?? '',
     rejectThreshold: form.get('rejectThreshold') ?? 35,
+    maxExperienceYears: form.get('maxExperienceYears') ?? '',
     cvText: (form.get('cvText') as string | null) || undefined,
   });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };

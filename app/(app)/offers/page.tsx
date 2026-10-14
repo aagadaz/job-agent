@@ -16,6 +16,12 @@ import { REDIRECTING_SOURCES, offerSearchLinks } from '@/lib/search-links';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { isAdmin, requireUserId } from '@/lib/session';
 
+const REJECT_LABELS = {
+  score: 'note sous ton seuil',
+  experience: 'trop d\u2019expérience exigée',
+  expired: 'probablement fermée (retirée par l\u2019entreprise ou annonce trop ancienne)',
+} as const;
+
 export default async function OffersPage({
   searchParams,
 }: {
@@ -207,6 +213,15 @@ export default async function OffersPage({
                     {o.datePosted && ` · publiée le ${o.datePosted}`}
                     {` · ajoutée le ${o.addedAt.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })}`}
                   </p>
+                  {o.rejected && o.rejectReason && (
+                    <p className="mt-1 text-xs font-medium text-amber-700">
+                      Écartée : {REJECT_LABELS[o.rejectReason]}
+                      {o.rejectReason === 'experience' && o.requiredYears !== null && ` (${o.requiredYears} ans demandés)`}
+                    </p>
+                  )}
+                  {!o.rejected && o.requiredYears !== null && (
+                    <p className="mt-1 text-xs text-gray-500">Expérience demandée : {o.requiredYears} an{o.requiredYears > 1 ? 's' : ''} minimum</p>
+                  )}
                   {o.justification && <p className="mt-2 text-sm">{o.justification}</p>}
                   <div className="mt-2 flex flex-wrap gap-1 text-xs">
                     {o.strengths.map(s => (

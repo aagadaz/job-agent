@@ -4,6 +4,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import type { SearchArea } from '../lib/countries';
 
+export type RejectReason = 'score' | 'experience' | 'expired';
+
 // ─── Énumérations : des ensembles fermés de valeurs, vérifiés par PostgreSQL ───
 // Ajouter une valeur = migration "ALTER TYPE ... ADD VALUE" (toujours en fin de liste)
 export const atsEnum = pgEnum('ats', [
@@ -35,6 +37,8 @@ export const profiles = pgTable('profiles', {
   excludeTerms: text('exclude_terms').array().notNull().default([]), // ex. ['senior', 'lead']
   includeTerms: text('include_terms').array().notNull().default([]), 
   rejectThreshold: integer('reject_threshold').notNull().default(35),
+  // Offres exigeant PLUS que ce nombre d'années d'expérience → écartées. null = pas de limite.
+  maxExperienceYears: integer('max_experience_years').default(5),
   cvText: text('cv_text'),
   sheetId: text('sheet_id'), // Google Sheet de suivi des candidatures (facultatif)
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -79,6 +83,10 @@ export const userOffers = pgTable('user_offers', {
   strengths: text('strengths').array().notNull().default([]),
   missingSkills: text('missing_skills').array().notNull().default([]),
   rejected: boolean('rejected').notNull().default(false), // score <= seuil : remplace l'onglet "rejetees"
+  // Pourquoi l'offre est écartée : 'score' (note sous le seuil), 'experience' (trop d'années
+  // exigées) ou 'expired' (plus vue par les sources : probablement fermée). null = retenue.
+  rejectReason: text('reject_reason').$type<RejectReason>(),
+  requiredYears: integer('required_years'), // années d'expérience exigées, si le texte le dit
   status: statusEnum('status').notNull().default('a_traiter'),
   // Suppression LOGIQUE : la ligne reste (le worker sait que l'offre est déjà vue et ne la
   // re-note pas), elle est seulement masquée du fil. null = visible.
@@ -94,7 +102,7 @@ export const runs = pgTable('runs', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   status: runStatusEnum('status').notNull().default('running'),
-  stats: jsonb('stats').$type<{ fetched?: number; afterFilters?: number; new?: number; kept?: number; rejected?: number; unscored?: number }>(),
+  stats: jsonb('stats').$type<{ fetched?: number; afterFilters?: number; new?: number; kept?: number; rejected?: number; unscored?: number; tooSenior?: number; expired?: number }>(),
   error: text('error'),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp('finished_at', { withTimezone: true }),

@@ -6,7 +6,7 @@ export interface RunSnapshot {
   status: 'running' | 'success' | 'error';
   error: string | null;    // message POUR L'UTILISATEUR (déjà traduit côté serveur)
   details?: string | null; // erreur technique brute : seulement pour les administrateurs
-  stats: { fetched?: number; new?: number; kept?: number; rejected?: number; unscored?: number } | null;
+  stats: { fetched?: number; new?: number; kept?: number; rejected?: number; unscored?: number; tooSenior?: number; expired?: number } | null;
 }
 
 export interface RunSummary {
@@ -19,6 +19,14 @@ export interface RunSummary {
 const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : one}`;
 
 export function summarizeRun(run: RunSnapshot): RunSummary {
+  const summary = baseSummary(run);
+  // Complément : offres retirées du fil car disparues des sources (probablement pourvues)
+  const expired = run.status === 'success' ? run.stats?.expired ?? 0 : 0;
+  if (expired === 0) return summary;
+  return { ...summary, text: `${summary.text} ${plural(expired, 'offre probablement fermée a été retirée', 'offres probablement fermées ont été retirées')} du fil.` };
+}
+
+function baseSummary(run: RunSnapshot): RunSummary {
   if (run.status === 'running') return { tone: 'info', text: 'Recherche en cours…' };
   if (run.status === 'error') {
     return { tone: 'error', text: run.error ?? 'La recherche a échoué.', details: run.details };
@@ -38,7 +46,7 @@ export function summarizeRun(run: RunSnapshot): RunSummary {
     return { tone: 'success', text: `${plural(fresh, 'nouvelle offre ajoutée', 'nouvelles offres ajoutées')} (non notées : ajoute une clé Claude dans Profil pour les noter).` };
   }
   if (kept === 0) {
-    return { tone: 'info', text: `${plural(fresh, 'nouvelle offre', 'nouvelles offres')}, ${fresh > 1 ? 'toutes écartées' : 'écartée'} (score sous ton seuil).` };
+    return { tone: 'info', text: `${plural(fresh, 'nouvelle offre', 'nouvelles offres')}, ${fresh > 1 ? 'toutes écartées' : 'écartée'} (note sous ton seuil ou trop d'expérience exigée).` };
   }
   return {
     tone: 'success',

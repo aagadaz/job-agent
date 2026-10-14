@@ -11,6 +11,7 @@ export interface ProfileFormValues {
   includeTerms: string;
   excludeTerms: string;
   rejectThreshold: number;
+  maxExperienceYears: number | null;
   cvChars: number;
 }
 
@@ -37,6 +38,15 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
       <label className="block text-sm font-medium">
         Écarter les offres notées à ou sous
         <input name="rejectThreshold" type="number" min={0} max={100} defaultValue={initial.rejectThreshold} className={`${input} max-w-24`} />
+      </label>
+      <label className="block text-sm font-medium">
+        Écarter les offres exigeant plus de{' '}
+        <input
+          name="maxExperienceYears" type="number" min={0} max={30}
+          defaultValue={initial.maxExperienceYears ?? ''}
+          className="mx-1 w-20 rounded-md border px-3 py-2 text-sm"
+        />
+        ans d&apos;expérience <span className="font-normal text-gray-500">(vide = pas de limite)</span>
       </label>
       <fieldset className="rounded-md border p-4">
         <legend className="px-1 text-sm font-medium">CV</legend>
