@@ -17,6 +17,7 @@ import { mapPool } from '@/lib/concurrency';
 import { COUNTRY_CODES, type CountryCode } from '@/lib/countries';
 import { readCompanyLines } from '@/lib/csv';
 import { resolveCompany, SUPPORTED_ATS } from '@/sources/ats';
+import { reconcileFeed } from '@/db/repository';
 
 // Une server action est un endpoint HTTP public : on revérifie la session ET on valide
 // chaque champ, même si le formulaire "ne permet pas" de l'envoyer autrement.
@@ -102,7 +103,12 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
   }
 
   await saveProfile(userId, { ...parsed.data, cvText });
+  // Application IMMÉDIATE des réglages au fil existant (Adzuna désactivé, limite d'expérience
+  // modifiée) : même fonction que le worker, donc exactement les mêmes règles. Pas besoin
+  // d'attendre la prochaine recherche.
+  await reconcileFeed(userId, parsed.data.maxExperienceYears, parsed.data.useAdzuna ? [] : ['adzuna']);
   revalidatePath('/profile');
+  revalidatePath('/offers');
   return { ok: true, message: 'Profil enregistré.' };
 }
 
