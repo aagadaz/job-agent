@@ -7,7 +7,9 @@ import type { JobDetail } from '../lib/types';
 const BASE_URL = 'https://api.adzuna.com/v1/api/jobs';
 const RESULTS_PER_PAGE = 50;
 const PAGES_PER_KEYWORD = 2;     // 2 x 50 = 100 offres max par mot-clé
-const MAX_DAYS_OLD = 14;         // offres publiées depuis moins de 14 jours
+// 7 jours : passé ce délai, une bonne part des annonces relayées par Adzuna sont déjà pourvues
+// chez l'employeur (l'agrégateur ne le sait pas toujours). Mieux vaut moins d'offres, mais vivantes.
+const MAX_DAYS_OLD = 7;
 
 // Forme (partielle) d'une offre renvoyée par Adzuna : on ne type que ce qu'on lit.
 interface AdzunaJob {

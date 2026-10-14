@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import {
-  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getUserWithProfile, insertCompany, saveEncryptedKey, saveProfile, saveSheetId, setOfferDismissed, setOfferStatus,
+  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getUserWithProfile, insertCompany, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
 } from '@/db/dashboard';
 import { encrypt, maskSecret } from '@/lib/crypto';
 import { extractPdfText } from '@/lib/cv-analyzer';
@@ -202,6 +202,13 @@ export async function removeCompany(companyId: string): Promise<void> {
 export async function dismissOffer(offerId: string, dismissed: boolean): Promise<void> {
   const userId = await requireUserId();
   await setOfferDismissed(userId, z.string().uuid().parse(offerId), z.boolean().parse(dismissed));
+  revalidatePath('/offers');
+}
+
+/** « Cette offre n'est plus disponible » (ou annulation si l'utilisateur s'est trompé). */
+export async function reportClosed(offerId: string, closed: boolean): Promise<void> {
+  const userId = await requireUserId();
+  await setOfferClosed(userId, z.string().uuid().parse(offerId), z.boolean().parse(closed));
   revalidatePath('/offers');
 }
 

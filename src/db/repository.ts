@@ -146,7 +146,7 @@ export async function finishRun(
  *    → probablement pourvue (les agrégateurs gardent souvent des annonces déjà closes).
  */
 export const STALE_AFTER_DAYS = 3;
-export const AGGREGATOR_MAX_AGE_DAYS = 30;
+export const AGGREGATOR_MAX_AGE_DAYS = 21;
 const AGGREGATORS = ['adzuna'];
 
 /**
@@ -183,6 +183,7 @@ export async function reconcileFeed(userId: string, maxYears: number | null) {
       // date_posted est un texte ISO (« 2026-10-01T09:30:00Z ») : la comparaison de chaînes
       // suit l'ordre chronologique ; '' (date inconnue) n'est jamais considérée trop vieille.
       stale: sql<boolean>`case
+        when ${offers.closedAt} is not null then true
         when ${offers.source} = any(${sql.param(AGGREGATORS)}::text[])
           then ${offers.datePosted} <> '' and ${offers.datePosted} < to_char(now() - make_interval(days => ${AGGREGATOR_MAX_AGE_DAYS}), 'YYYY-MM-DD')
         else ${offers.fetchedAt} < now() - make_interval(days => ${STALE_AFTER_DAYS})

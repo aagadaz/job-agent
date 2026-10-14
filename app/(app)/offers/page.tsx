@@ -5,6 +5,7 @@ import { summarizeRun, type RunSnapshot } from '@/lib/run-summary';
 import { describeRunError } from '@/lib/run-errors';
 import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
+import { ClosedButton } from '../../components/ClosedButton';
 import { StatusSelect } from '../../components/StatusSelect';
 import {
   SORTS, SORT_LABELS, STATUSES, countOffersByCountry, getUserWithProfile, listOffers,
@@ -215,7 +216,7 @@ export default async function OffersPage({
                   </p>
                   {o.rejected && o.rejectReason && (
                     <p className="mt-1 text-xs font-medium text-amber-700">
-                      Écartée : {REJECT_LABELS[o.rejectReason]}
+                      Écartée : {o.rejectReason === 'expired' && o.closedAt ? 'signalée fermée par un utilisateur' : REJECT_LABELS[o.rejectReason]}
                       {o.rejectReason === 'experience' && o.requiredYears !== null && ` (${o.requiredYears} ans demandés)`}
                     </p>
                   )}
@@ -234,6 +235,7 @@ export default async function OffersPage({
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   <StatusSelect offerId={o.offerId} status={o.status} />
+                  {!dismissed && <ClosedButton offerId={o.offerId} closed={o.closedAt !== null} />}
                   <DismissButton offerId={o.offerId} dismissed={dismissed} />
                 </div>
               </div>

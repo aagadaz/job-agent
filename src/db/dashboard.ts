@@ -181,6 +181,7 @@ export async function listOffers(
       rejected: userOffers.rejected,
       rejectReason: userOffers.rejectReason,
       requiredYears: userOffers.requiredYears,
+      closedAt: offers.closedAt,
       addedAt: userOffers.createdAt, // date d'arrivée de l'offre dans le fil de CET utilisateur
     })
     .from(userOffers)
@@ -228,11 +229,42 @@ export async function getOfferDetail(userId: string, offerId: string) {
       missingSkills: userOffers.missingSkills,
       status: userOffers.status,
       dismissedAt: userOffers.dismissedAt,
+      closedAt: offers.closedAt,
     })
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
     .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
   return row;
+}
+
+/**
+ * Signale une offre comme fermée (ou annule le signalement). L'offre est partagée : le
+ * signalement l'écarte du fil de TOUS les utilisateurs qui l'ont encore « à traiter ».
+ * Garde-fou : on ne peut signaler qu'une offre présente dans SON propre fil.
+ */
+export async function setOfferClosed(userId: string, offerId: string, closed: boolean): Promise<boolean> {
+  return db.transaction(async tx => {
+    const [own] = await tx
+      .select({ offerId: userOffers.offerId })
+      .from(userOffers)
+      .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
+    if (!own) return false;
+
+    await tx.update(offers).set({ closedAt: closed ? new Date() : null }).where(eq(offers.id, offerId));
+    // Effet immédiat sans attendre le prochain passage du worker (qui confirmera via reconcileFeed)
+    await tx
+      .update(userOffers)
+      .set(closed ? { rejected: true, rejectReason: 'expired' } : { rejected: false, rejectReason: null })
+      .where(and(
+        eq(userOffers.offerId, offerId),
+        eq(userOffers.status, 'a_traiter'),
+        isNull(userOffers.dismissedAt),
+        closed
+          ? and(isNull(userOffers.rejectReason), eq(userOffers.rejected, false)) // seulement les offres retenues
+          : eq(userOffers.rejectReason, 'expired'),                              // seulement celles écartées comme fermées
+      ));
+    return true;
+  });
 }
 
 /** Ce qu'il faut pour écrire la ligne du Sheet — toujours filtré par userId. */

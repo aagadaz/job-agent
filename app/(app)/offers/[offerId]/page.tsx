@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { z } from 'zod';
 import { ScoreBadge } from '../../../components/ScoreBadge';
 import { DismissButton } from '../../../components/DismissButton';
+import { ClosedButton } from '../../../components/ClosedButton';
 import { StatusSelect } from '../../../components/StatusSelect';
 import { getOfferDetail } from '@/db/dashboard';
 import { countryLabel } from '@/lib/countries';
@@ -62,6 +63,7 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
         </div>
         <div className="flex flex-col items-end gap-2">
           <StatusSelect offerId={offer.offerId} status={offer.status} />
+          <ClosedButton offerId={offer.offerId} closed={offer.closedAt !== null} />
           <DismissButton offerId={offer.offerId} dismissed={offer.dismissedAt !== null} redirectTo="/offers" />
         </div>
       </header>

@@ -71,6 +71,9 @@ export const offers = pgTable('offers', {
   qualifications: text('qualifications').notNull().default(''),
   country: text('country'), // code ISO déduit du lieu (ou du pays de recherche Adzuna) ; null = inconnu
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  // Signalée « fermée » par un utilisateur qui a voulu postuler. L'offre étant PARTAGÉE, le
+  // signalement profite à tous : elle est écartée du fil de chacun. null = pas de signalement.
+  closedAt: timestamp('closed_at', { withTimezone: true }),
 });
 
 // ─── Table d'association utilisateur ↔ offre : le score et le suivi sont PERSONNELS ───

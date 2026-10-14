@@ -57,6 +57,13 @@
       "when": 1791970759906,
       "tag": "0007_fearless_newton_destine",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791976162350,
+      "tag": "0008_little_gideon",
+      "breakpoints": true
     }
   ]
 }
