@@ -6,6 +6,7 @@ import { DismissButton } from '../../../components/DismissButton';
 import { StatusSelect } from '../../../components/StatusSelect';
 import { getOfferDetail } from '@/db/dashboard';
 import { countryLabel } from '@/lib/countries';
+import { REDIRECTING_SOURCES, offerSearchLinks } from '@/lib/search-links';
 import { requireUserId } from '@/lib/session';
 
 const VERDICTS = { postuler: 'Postuler', a_etudier: 'À étudier', ignorer: 'Ignorer' } as const;
@@ -47,6 +48,17 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
           >
             Voir l&apos;annonce originale ↗
           </a>
+          {REDIRECTING_SOURCES.has(offer.source) && (
+            <p className="mt-2 text-sm text-gray-500">
+              Le lien {offer.source} ne s&apos;ouvre pas ? Chercher l&apos;offre sur{' '}
+              {offerSearchLinks(offer.title, offer.company, offer.location).map((l, i) => (
+                <span key={l.label}>
+                  {i > 0 && ' · '}
+                  <a href={l.url} target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-800">{l.label} ↗</a>
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         <div className="flex flex-col items-end gap-2">
           <StatusSelect offerId={offer.offerId} status={offer.status} />

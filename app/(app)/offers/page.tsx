@@ -12,6 +12,7 @@ import {
 } from '@/db/dashboard';
 import { searchMode } from '@/lib/search-mode';
 import { COUNTRY_CODES, countryLabel } from '@/lib/countries';
+import { REDIRECTING_SOURCES, offerSearchLinks } from '@/lib/search-links';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { isAdmin, requireUserId } from '@/lib/session';
 
@@ -191,6 +192,16 @@ export default async function OffersPage({
                   <a href={o.url} target="_blank" rel="noopener noreferrer" title="Annonce originale" className="ml-2 text-sm text-gray-400 hover:text-gray-700">
                     ↗
                   </a>
+                  {REDIRECTING_SOURCES.has(o.source) && (
+                    <a
+                      href={offerSearchLinks(o.title, o.company, o.location)[0].url}
+                      target="_blank" rel="noopener noreferrer"
+                      title="Chercher l'offre sur Google (si le lien Adzuna ne s'ouvre pas)"
+                      className="ml-2 text-xs text-gray-400 hover:text-gray-700 hover:underline"
+                    >
+                      chercher ailleurs
+                    </a>
+                  )}
                   <p className="text-sm text-gray-600">
                     {o.company} · {o.location || 'Lieu non précisé'} · <b className="font-medium">{countryLabel(o.country)}</b> · {o.source}
                     {o.datePosted && ` · publiée le ${o.datePosted}`}
