@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import {
-  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getUserWithProfile, insertCompany, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
+  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getUserWithProfile, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
 } from '@/db/dashboard';
 import { encrypt, maskSecret } from '@/lib/crypto';
 import { extractPdfText } from '@/lib/cv-analyzer';
@@ -47,6 +47,7 @@ const ProfileSchema = z.object({
   excludeTerms: csv,
   rejectThreshold: z.coerce.number().int().min(0).max(100),
   // Champ vide = pas de limite. Attention : z.coerce.number() transformerait "" en 0 (Number("") === 0) !
+  useAdzuna: z.boolean(),
   maxExperienceYears: z
     .string()
     .trim()
@@ -67,6 +68,8 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     excludeTerms: form.get('excludeTerms') ?? '',
     rejectThreshold: form.get('rejectThreshold') ?? 35,
     maxExperienceYears: form.get('maxExperienceYears') ?? '',
+    // Case à cocher : présente dans le formulaire SEULEMENT si cochée (valeur "on")
+    useAdzuna: form.get('useAdzuna') === 'on',
     cvText: (form.get('cvText') as string | null) || undefined,
   });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
@@ -92,6 +95,11 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     keywords: parsed.data.keywords,
   });
   if (!mode) return { ok: false, message: 'Sans clé Claude, indique au moins un mot-clé : ils ne peuvent pas être déduits du CV.' };
+
+  // Sans Adzuna, les seules sources sont les pages carrières : il en faut au moins une
+  if (!parsed.data.useAdzuna && (await listCompanies(userId)).length === 0) {
+    return { ok: false, message: 'Sans Adzuna, ajoute d\u2019abord des entreprises (onglet Entreprises) : sinon la recherche ne trouvera rien.' };
+  }
 
   await saveProfile(userId, { ...parsed.data, cvText });
   revalidatePath('/profile');

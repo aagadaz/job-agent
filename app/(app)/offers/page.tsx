@@ -20,6 +20,7 @@ import { isAdmin, requireUserId } from '@/lib/session';
 const REJECT_LABELS = {
   score: 'note sous ton seuil',
   experience: 'trop d\u2019expérience exigée',
+  source: 'source désactivée dans ton profil',
   expired: 'probablement fermée (retirée par l\u2019entreprise ou annonce trop ancienne)',
 } as const;
 

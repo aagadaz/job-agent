@@ -35,6 +35,7 @@ export default async function ProfilePage() {
             rejectThreshold: profile?.rejectThreshold ?? 35,
             // undefined (pas encore de profil) → défaut 5 ; null (choisi) → pas de limite
             maxExperienceYears: profile === null || profile === undefined ? 5 : profile.maxExperienceYears,
+            useAdzuna: profile?.useAdzuna ?? true,
             cvChars: profile?.cvText?.length ?? 0,
           }}
         />

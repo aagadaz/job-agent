@@ -12,6 +12,7 @@ export interface ProfileFormValues {
   excludeTerms: string;
   rejectThreshold: number;
   maxExperienceYears: number | null;
+  useAdzuna: boolean;
   cvChars: number;
 }
 
@@ -47,6 +48,16 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
           className="mx-1 w-20 rounded-md border px-3 py-2 text-sm"
         />
         ans d&apos;expérience <span className="font-normal text-gray-500">(vide = pas de limite)</span>
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input name="useAdzuna" type="checkbox" defaultChecked={initial.useAdzuna} className="mt-1" />
+        <span>
+          <span className="font-medium">Inclure les offres Adzuna</span>{' '}
+          <span className="text-gray-500">
+            (agrégateur : beaucoup d&apos;offres, mais certaines déjà pourvues. Décoché = uniquement les pages carrières
+            de tes entreprises, toujours à jour.)
+          </span>
+        </span>
       </label>
       <fieldset className="rounded-md border p-4">
         <legend className="px-1 text-sm font-medium">CV</legend>

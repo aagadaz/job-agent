@@ -64,6 +64,13 @@
       "when": 1791976162350,
       "tag": "0008_little_gideon",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791977002605,
+      "tag": "0009_dusty_bullseye",
+      "breakpoints": true
     }
   ]
 }

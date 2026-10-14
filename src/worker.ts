@@ -23,12 +23,13 @@ import { fetchCompanyJobs } from './sources/ats';
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
 
 /** Collecte toutes les sources en parallèle. Une source en panne n'empêche pas les autres. */
-async function collect(userId: string, keywords: string[], areas: SearchArea[]): Promise<JobDetail[]> {
+async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean): Promise<JobDetail[]> {
   const companies = await getCompanies(userId);
   const countries = [...new Set(areas.map(a => a.country))];
 
   // Adzuna : une recherche par zone, dans la base du pays (s'il en a une)
-  const adzunaTasks = areas.flatMap(area => {
+  if (!useAdzuna) console.log('   · Adzuna désactivé dans le profil : pages carrières uniquement');
+  const adzunaTasks = (useAdzuna ? areas : []).flatMap(area => {
     const adzunaCode = COUNTRIES[area.country].adzuna;
     if (!adzunaCode) {
       console.log(`   · Adzuna ne couvre pas ${COUNTRIES[area.country].label} : pages carrières uniquement`);
@@ -83,7 +84,7 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   console.log(`   Mots-clés : ${keywords.join(', ')} · ${areas.map(a => `${COUNTRIES[a.country].label}${a.city ? `/${a.city}` : ''}`).join(', ')}`);
 
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
-  const fetched = await collect(user.id, keywords, areas);
+  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna);
   const unique = dedupeAcrossSources(fetched);
   // Toutes les offres renvoyées sont « encore en ligne », y compris celles déjà vues :
   // c'est ce qui permet ensuite de repérer celles qui ont disparu (= probablement fermées)
@@ -112,7 +113,7 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
     : batch.map(o => ({ ...o, scoring: null }));
   const inserted = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
   // Puis on (re)classe tout le fil : expérience trop élevée, offres disparues des sources
-  const feed = await reconcileFeed(user.id, maxYears);
+  const feed = await reconcileFeed(user.id, maxYears, profile.useAdzuna ? [] : ['adzuna']);
   console.log(`   Fil : ${feed.experience} écartées (expérience), ${feed.expired} probablement fermées, ${feed.restored} réintégrées`);
   const kept = inserted.kept - tooSenior.length;
   const rejected = inserted.rejected + tooSenior.length;

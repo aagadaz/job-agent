@@ -171,12 +171,13 @@ export async function touchOffers(urls: string[]): Promise<void> {
  * Ne touche jamais : les offres écartées par la note (décision de Claude), celles que
  * l'utilisateur a supprimées, ni celles dont il a changé le statut (il y a postulé, etc.).
  */
-export async function reconcileFeed(userId: string, maxYears: number | null) {
+export async function reconcileFeed(userId: string, maxYears: number | null, disabledSources: string[] = []) {
   const rows = await db
     .select({
       offerId: userOffers.offerId,
       rejectReason: userOffers.rejectReason,
       requiredYears: userOffers.requiredYears,
+      source: offers.source,
       title: offers.title,
       description: offers.description,
       qualifications: offers.qualifications,
@@ -200,7 +201,7 @@ export async function reconcileFeed(userId: string, maxYears: number | null) {
         // reject_reason ont rejected = true et un motif null ; on ne doit pas les ressusciter)
         and(isNull(userOffers.rejectReason), eq(userOffers.rejected, false)),
         // …ou écartées par un motif automatique, donc réévaluable
-        inArray(userOffers.rejectReason, ['experience', 'expired']),
+        inArray(userOffers.rejectReason, ['experience', 'expired', 'source']),
       ),
     ));
 
@@ -211,7 +212,12 @@ export async function reconcileFeed(userId: string, maxYears: number | null) {
     // Offres d'avant cette fonctionnalité : années jamais calculées → on les calcule maintenant
     const years = r.requiredYears ?? requiredYears(r.title, r.description, r.qualifications);
     if (r.requiredYears === null && years !== null) yearsToSave.push({ offerId: r.offerId, years });
-    const reason: RejectReason | null = tooMuchExperience(years, maxYears) ? 'experience' : r.stale ? 'expired' : null;
+    // Ordre de priorité : la source désactivée l'emporte (choix explicite de l'utilisateur)
+    const reason: RejectReason | null =
+      disabledSources.includes(r.source) ? 'source'
+      : tooMuchExperience(years, maxYears) ? 'experience'
+      : r.stale ? 'expired'
+      : null;
     if (reason === r.rejectReason) continue; // déjà dans le bon état : rien à écrire
     groups.set(reason, [...(groups.get(reason) ?? []), r.offerId]);
   }

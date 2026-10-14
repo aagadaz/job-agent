@@ -63,6 +63,7 @@ export interface ProfileInput {
   excludeTerms: string[];
   rejectThreshold: number;
   maxExperienceYears: number | null; // null = pas de limite
+  useAdzuna: boolean;
   cvText?: string; // absent = on garde le CV actuel
 }
 
