@@ -93,6 +93,7 @@ export const userOffers = pgTable('user_offers', {
   // désactivée dans le profil). null = retenue.
   rejectReason: text('reject_reason').$type<RejectReason>(),
   requiredYears: integer('required_years'), // années d'expérience exigées, si le texte le dit
+  coverLetter: text('cover_letter'), // brouillon de lettre de motivation (généré puis éditable)
   status: statusEnum('status').notNull().default('a_traiter'),
   // Suppression LOGIQUE : la ligne reste (le worker sait que l'offre est déjà vue et ne la
   // re-note pas), elle est seulement masquée du fil. null = visible.

@@ -4,9 +4,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import {
-  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getUserWithProfile, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
+  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
 } from '@/db/dashboard';
-import { encrypt, maskSecret } from '@/lib/crypto';
+import { decrypt, encrypt, maskSecret } from '@/lib/crypto';
+import { generateCoverLetter } from '@/lib/cover-letter';
 import { extractPdfText } from '@/lib/cv-analyzer';
 import { requireUserId } from '@/lib/session';
 import { NO_SEARCH_MESSAGE, searchMode } from '@/lib/search-mode';
@@ -322,4 +323,49 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
 
   revalidatePath('/offers');
   return { ok: true, message: 'Recherche lancée : 3 à 6 minutes. La page se mettra à jour toute seule.' };
+}
+
+// ─── Lettre de motivation ───
+
+const MAX_LETTER_CHARS = 5_000;
+
+/** Génère (ou régénère) la lettre de motivation d'une offre avec la clé Claude de l'utilisateur. */
+export async function createCoverLetter(offerId: string): Promise<ActionResult & { letter: string }> {
+  const userId = await requireUserId();
+  const id = z.string().uuid().safeParse(offerId);
+  if (!id.success) return { ok: false, message: 'Offre invalide.', letter: '' };
+
+  const [account, offer] = await Promise.all([getUserWithProfile(userId), getOfferDetail(userId, id.data)]);
+  if (!offer) return { ok: false, message: 'Offre introuvable.', letter: '' };
+  const encryptedKey = account?.user.anthropicKeyEncrypted;
+  const cvText = account?.profile?.cvText;
+  if (!encryptedKey || !cvText) return { ok: false, message: 'Ajoute ta clé Claude et ton CV dans Profil.', letter: '' };
+
+  let letter: string;
+  try {
+    letter = await generateCoverLetter(new Anthropic({ apiKey: decrypt(encryptedKey) }), cvText, offer);
+  } catch (err) {
+    // Détail technique dans les logs serveur uniquement ; message clair pour l'utilisateur
+    console.error('[cover-letter]', err instanceof Error ? err.message : err);
+    const status = (err as { status?: number }).status;
+    const message =
+      status === 401 ? 'Ta clé Claude est refusée : vérifie-la dans Profil.'
+      : status === 402 || /credit/i.test(String((err as Error).message)) ? 'Crédit Claude épuisé sur ta clé.'
+      : status === 429 || status === 529 ? 'Claude est très sollicité : réessaie dans une minute.'
+      : 'La rédaction a échoué. Réessaie dans un instant.';
+    return { ok: false, message, letter: '' };
+  }
+
+  await setCoverLetter(userId, id.data, letter.slice(0, MAX_LETTER_CHARS));
+  return { ok: true, message: 'Lettre rédigée. Relis-la et personnalise-la avant de l\u2019envoyer.', letter };
+}
+
+/** Enregistre les retouches faites à la main sur la lettre. */
+export async function saveCoverLetter(offerId: string, letter: string): Promise<ActionResult> {
+  const userId = await requireUserId();
+  const parsed = z.object({ id: z.string().uuid(), letter: z.string().max(MAX_LETTER_CHARS, 'Lettre trop longue.') })
+    .safeParse({ id: offerId, letter });
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+  const ok = await setCoverLetter(userId, parsed.data.id, parsed.data.letter);
+  return ok ? { ok: true, message: 'Modifications enregistrées.' } : { ok: false, message: 'Offre introuvable.' };
 }

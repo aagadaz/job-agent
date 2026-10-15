@@ -231,11 +231,22 @@ export async function getOfferDetail(userId: string, offerId: string) {
       status: userOffers.status,
       dismissedAt: userOffers.dismissedAt,
       closedAt: offers.closedAt,
+      coverLetter: userOffers.coverLetter,
     })
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
     .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
   return row;
+}
+
+/** Enregistre la lettre de motivation d'une offre — seulement dans SON fil. */
+export async function setCoverLetter(userId: string, offerId: string, letter: string): Promise<boolean> {
+  const rows = await db
+    .update(userOffers)
+    .set({ coverLetter: letter })
+    .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)))
+    .returning({ offerId: userOffers.offerId });
+  return rows.length === 1;
 }
 
 /**

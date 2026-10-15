@@ -5,10 +5,15 @@ import { ScoreBadge } from '../../../components/ScoreBadge';
 import { DismissButton } from '../../../components/DismissButton';
 import { ClosedButton } from '../../../components/ClosedButton';
 import { StatusSelect } from '../../../components/StatusSelect';
-import { getOfferDetail } from '@/db/dashboard';
+import { getOfferDetail, getUserWithProfile } from '@/db/dashboard';
+import { CoverLetterPanel } from '../../../components/CoverLetterPanel';
 import { countryLabel } from '@/lib/countries';
 import { REDIRECTING_SOURCES, offerSearchLinks } from '@/lib/search-links';
 import { requireUserId } from '@/lib/session';
+
+// La génération de lettre appelle Claude depuis la server action de cette page :
+// on laisse jusqu'à 60 s à la fonction serverless (10 s par défaut sur certains plans).
+export const maxDuration = 60;
 
 const VERDICTS = { postuler: 'Postuler', a_etudier: 'À étudier', ignorer: 'Ignorer' } as const;
 
@@ -23,8 +28,9 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
   if (!z.string().uuid().safeParse(offerId).success) notFound();
   // Requête filtrée par userId : une offre d'un autre utilisateur donne la même 404 qu'une
   // offre inexistante (on ne révèle même pas qu'elle existe)
-  const offer = await getOfferDetail(userId, offerId);
+  const [offer, account] = await Promise.all([getOfferDetail(userId, offerId), getUserWithProfile(userId)]);
   if (!offer) notFound();
+  const canGenerate = !!account?.user.anthropicKeyEncrypted && !!account?.profile?.cvText;
 
   const excerpt = EXCERPT_ONLY.has(offer.source);
   const meta = [offer.company, offer.location || 'Lieu non précisé', countryLabel(offer.country), offer.employmentType, offer.datePosted && `publiée le ${offer.datePosted}`]
@@ -80,6 +86,11 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
           </div>
         </section>
       )}
+
+      <section className="rounded-xl border bg-white p-6">
+        <h2 className="mb-2 font-semibold">Lettre de motivation</h2>
+        <CoverLetterPanel offerId={offer.offerId} initial={offer.coverLetter} canGenerate={canGenerate} />
+      </section>
 
       <section className="rounded-xl border bg-white p-6">
         <h2 className="mb-2 font-semibold">Description</h2>

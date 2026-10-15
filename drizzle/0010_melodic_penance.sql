@@ -1,0 +1,1 @@
+ALTER TABLE "user_offers" ADD COLUMN "cover_letter" text;
