@@ -12,12 +12,13 @@ export function CoverLetterPanel({ offerId, initial, canGenerate }: { offerId: s
   const [saved, setSaved] = useState(initial ?? '');
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
+  const [note, setNote] = useState('');
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
 
   const generate = () =>
     startTransition(async () => {
       setMessage(null);
-      const res = await createCoverLetter(offerId);
+      const res = await createCoverLetter(offerId, note);
       if (res.ok) { setText(res.letter); setSaved(res.letter); }
       setMessage({ ok: res.ok, text: res.message });
     });
@@ -58,8 +59,22 @@ export function CoverLetterPanel({ offerId, initial, canGenerate }: { offerId: s
         </>
       ) : (
         <p className="text-sm text-gray-600">
-          Une lettre courte (150 à 230 mots), écrite à partir de ton CV et de cette offre, sans formules toutes faites.
+          Une lettre courte (180 à 260 mots), écrite à partir de ton CV et de cette offre, sans formules toutes faites.
         </p>
+      )}
+      {canGenerate && (
+        <label className="block text-sm">
+          <span className="font-medium">Pourquoi cette offre t&apos;intéresse ?</span>{' '}
+          <span className="text-gray-500">(facultatif, une phrase suffit, avec tes mots : c&apos;est ce qui rend la lettre humaine)</span>
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            maxLength={600}
+            rows={2}
+            placeholder="Ex. : j'utilise leur appli tous les jours ; je veux travailler sur des modèles en production plutôt qu'en R&D…"
+            className="mt-1 w-full rounded-md border p-2 text-sm"
+          />
+        </label>
       )}
       <div className="flex flex-wrap gap-2">
         {canGenerate && (

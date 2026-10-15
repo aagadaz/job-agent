@@ -330,7 +330,7 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
 const MAX_LETTER_CHARS = 5_000;
 
 /** Génère (ou régénère) la lettre de motivation d'une offre avec la clé Claude de l'utilisateur. */
-export async function createCoverLetter(offerId: string): Promise<ActionResult & { letter: string }> {
+export async function createCoverLetter(offerId: string, note = ''): Promise<ActionResult & { letter: string }> {
   const userId = await requireUserId();
   const id = z.string().uuid().safeParse(offerId);
   if (!id.success) return { ok: false, message: 'Offre invalide.', letter: '' };
@@ -343,7 +343,7 @@ export async function createCoverLetter(offerId: string): Promise<ActionResult &
 
   let letter: string;
   try {
-    letter = await generateCoverLetter(new Anthropic({ apiKey: decrypt(encryptedKey) }), cvText, offer);
+    letter = await generateCoverLetter(new Anthropic({ apiKey: decrypt(encryptedKey) }), cvText, offer, String(note).slice(0, 600));
   } catch (err) {
     // Détail technique dans les logs serveur uniquement ; message clair pour l'utilisateur
     console.error('[cover-letter]', err instanceof Error ? err.message : err);
