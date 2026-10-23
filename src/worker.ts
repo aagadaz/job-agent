@@ -36,7 +36,7 @@ async function collect(userId: string, keywords: string[], areas: SearchArea[], 
       return [];
     }
     return [{
-      label: `Adzuna ${COUNTRIES[area.country].label}${area.city ? ` (${area.city})` : ''}`,
+      label: `Adzuna ${COUNTRIES[area.country].label}`, // sans la ville : logs potentiellement publics
       run: () => fetchAdzunaOffers(keywords, { country: adzunaCode, location: area.city }),
     }];
   });
@@ -81,7 +81,9 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   // Profil créé avant les zones : on retombe sur l'ancien champ ville, en France
   const areas: SearchArea[] = profile.areas.length > 0 ? profile.areas : [{ country: 'fr', city: profile.location }];
   console.log(`   Mode : ${mode === 'scored' ? 'noté par Claude' : 'sans clé (non noté)'}`);
-  console.log(`   Mots-clés : ${keywords.join(', ')} · ${areas.map(a => `${COUNTRIES[a.country].label}${a.city ? `/${a.city}` : ''}`).join(', ')}`);
+  // Logs PUBLICS si le dépôt est public (onglet Actions) : on n'y écrit que des compteurs,
+  // jamais les mots-clés, villes ou e-mails, qui en diraient trop sur la recherche de quelqu'un.
+  console.log(`   ${keywords.length} mots-clés · ${areas.length} zone(s) de recherche`);
 
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
   const fetched = await collect(user.id, keywords, areas, profile.useAdzuna);
@@ -165,7 +167,9 @@ async function main() {
   let failures = 0;
 
   for (const entry of activeUsers) {
-    console.log(`▶ ${entry.user.email}`);
+    // Pseudonyme : 8 premiers caractères de l'UUID, assez pour retrouver la ligne en base
+    // (côté admin), sans exposer l'identité de la personne dans des logs publics.
+    console.log(`▶ utilisateur ${entry.user.id.slice(0, 8)}`);
     const runId = presetRunId ?? (await startRun(entry.user.id));
     try {
       const stats = await processUser(entry);
