@@ -18,6 +18,7 @@ import { mapPool } from './lib/concurrency';
 import { getSettings } from './db/settings';
 import { searchMode } from './lib/search-mode';
 import { fetchAdzunaOffers } from './sources/adzuna';
+import { fetchFranceTravailOffers, isFranceTravailConfigured } from './sources/france-travail';
 import { fetchCompanyJobs } from './sources/ats';
 
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
@@ -43,6 +44,11 @@ async function collect(userId: string, keywords: string[], areas: SearchArea[], 
 
   const tasks: { label: string; run: () => Promise<JobDetail[]> }[] = [
     ...adzunaTasks,
+    // France Travail : zones en France uniquement, si l'accès API est configuré
+    ...(isFranceTravailConfigured() ? areas.filter(a => a.country === 'fr') : []).map(area => ({
+      label: 'France Travail',
+      run: () => fetchFranceTravailOffers(keywords, area.city),
+    })),
     ...companies.map(c => ({
       label: `${c.name} (${c.ats})`,
       // Les pages carrières publient des postes dans le monde entier : on garde les pays voulus.

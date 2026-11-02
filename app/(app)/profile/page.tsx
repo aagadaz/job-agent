@@ -55,7 +55,7 @@ export default async function ProfilePage() {
           Quand tu passes une offre en « Postulé », une ligne est ajoutée ; les statuts suivants la mettent à jour.
         </p>
         <SheetForm
-          currentUrl={profile?.sheetId ? `https://docs.google.com/spreadsheets/d/${profile.sheetId}` : ''}
+          currentUrl={profile?.sheetId ? `https://docs.google.com/spreadsheets/d/${profile.sheetId}/edit${profile.sheetGid !== null ? `#gid=${profile.sheetGid}` : ''}` : ''}
           serviceEmail={serviceAccountEmail()}
         />
       </section>

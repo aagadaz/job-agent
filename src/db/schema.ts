@@ -9,7 +9,7 @@ export type RejectReason = 'score' | 'experience' | 'expired' | 'source';
 // ─── Énumérations : des ensembles fermés de valeurs, vérifiés par PostgreSQL ───
 // Ajouter une valeur = migration "ALTER TYPE ... ADD VALUE" (toujours en fin de liste)
 export const atsEnum = pgEnum('ats', [
-  'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'workable', 'recruitee',
+  'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'workable', 'recruitee', 'personio', 'teamtailor',
 ]);
 export const verdictEnum = pgEnum('verdict', ['postuler', 'a_etudier', 'ignorer']);
 export const statusEnum = pgEnum('application_status', [
@@ -43,6 +43,8 @@ export const profiles = pgTable('profiles', {
   useAdzuna: boolean('use_adzuna').notNull().default(true),
   cvText: text('cv_text'),
   sheetId: text('sheet_id'), // Google Sheet de suivi des candidatures (facultatif)
+  // Onglet choisi (le #gid=… de l'URL). null = onglet « Candidatures » géré par l'application
+  sheetGid: integer('sheet_gid'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -56,6 +58,22 @@ export const companies = pgTable('companies', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   unique('companies_user_ats_slug').on(t.userId, t.ats, t.slug), // pas deux fois la même entreprise
+]);
+
+// ─── Catalogue partagé d'entreprises VÉRIFIÉES (ATS lisible, offres publiées) ───
+// Alimenté par le script src/tools/build-catalog.ts ; chaque utilisateur y pioche en un clic.
+export const catalogCompanies = pgTable('catalog_companies', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  ats: atsEnum('ats').notNull(),
+  slug: text('slug').notNull(),
+  sector: text('sector').notNull().default(''),     // libellé libre : « IA / Santé », « Conseil data »…
+  category: text('category').notNull().default(''), // AI & tech · Consulting · Financial services · Industry
+  countries: text('countries').array().notNull().default([]),
+  jobCount: integer('job_count').notNull().default(0),
+  verifiedAt: timestamp('verified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique('catalog_ats_slug').on(t.ats, t.slug),
 ]);
 
 // ─── Offres : partagées entre tous les utilisateurs, uniques par URL normalisée ───

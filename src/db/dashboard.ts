@@ -1,6 +1,6 @@
-import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from './client';
-import { users, profiles, companies, offers, userOffers, runs } from './schema';
+import { users, profiles, companies, offers, userOffers, runs, catalogCompanies } from './schema';
 import { STATUS_LABELS } from '../lib/status';
 import type { SearchArea } from '../lib/countries';
 
@@ -77,11 +77,11 @@ export async function saveProfile(userId: string, input: ProfileInput): Promise<
 }
 
 /** Enregistre (ou efface avec null) le Google Sheet de l'utilisateur. */
-export async function saveSheetId(userId: string, sheetId: string | null): Promise<void> {
+export async function saveSheetId(userId: string, sheetId: string | null, sheetGid: number | null = null): Promise<void> {
   await db
     .insert(profiles)
-    .values({ userId, sheetId })
-    .onConflictDoUpdate({ target: profiles.userId, set: { sheetId, updatedAt: new Date() } });
+    .values({ userId, sheetId, sheetGid })
+    .onConflictDoUpdate({ target: profiles.userId, set: { sheetId, sheetGid, updatedAt: new Date() } });
 }
 
 export async function saveEncryptedKey(userId: string, encrypted: string): Promise<void> {
@@ -98,6 +98,42 @@ export async function listCompanies(userId: string) {
 export async function insertCompany(userId: string, c: Pick<typeof companies.$inferInsert, 'name' | 'ats' | 'slug'>): Promise<boolean> {
   const inserted = await db.insert(companies).values({ userId, ...c }).onConflictDoNothing().returning({ id: companies.id });
   return inserted.length > 0; // ON CONFLICT DO NOTHING + RETURNING : 0 ligne = conflit
+}
+
+/** Catalogue partagé, SANS les entreprises que l'utilisateur suit déjà (même ATS + identifiant). */
+export async function listCatalog(userId: string) {
+  return db
+    .select({
+      id: catalogCompanies.id,
+      name: catalogCompanies.name,
+      ats: catalogCompanies.ats,
+      sector: catalogCompanies.sector,
+      category: catalogCompanies.category,
+      countries: catalogCompanies.countries,
+      jobCount: catalogCompanies.jobCount,
+    })
+    .from(catalogCompanies)
+    // Anti-jointure : LEFT JOIN puis « pas de correspondance » = pas encore suivie
+    .leftJoin(companies, and(
+      eq(companies.userId, userId),
+      eq(companies.ats, catalogCompanies.ats),
+      eq(companies.slug, catalogCompanies.slug),
+    ))
+    .where(isNull(companies.id))
+    .orderBy(desc(catalogCompanies.jobCount));
+}
+
+/** Ajoute des entreprises du catalogue (déjà vérifiées : aucun appel aux ATS). Renvoie le nombre ajouté. */
+export async function addCatalogCompanies(userId: string, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const picked = await db.select().from(catalogCompanies).where(inArray(catalogCompanies.id, ids));
+  if (picked.length === 0) return 0;
+  const inserted = await db
+    .insert(companies)
+    .values(picked.map(c => ({ userId, name: c.name, ats: c.ats, slug: c.slug })))
+    .onConflictDoNothing()
+    .returning({ id: companies.id });
+  return inserted.length;
 }
 
 export async function deleteCompany(userId: string, companyId: string): Promise<void> {
@@ -284,6 +320,8 @@ export async function getApplicationForSheet(userId: string, offerId: string) {
   const [row] = await db
     .select({
       sheetId: profiles.sheetId,
+      sheetGid: profiles.sheetGid,
+      employmentType: offers.employmentType,
       company: offers.company,
       title: offers.title,
       location: offers.location,

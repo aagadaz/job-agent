@@ -18,7 +18,11 @@ export function SheetForm({ currentUrl, serviceEmail }: { currentUrl: string; se
         <li>
           Bouton <b>Partager</b> → ajoute <code className="rounded bg-gray-100 px-1 text-xs break-all">{serviceEmail}</code> en <b>Éditeur</b>.
         </li>
-        <li>Colle l&apos;URL du Sheet ci-dessous (vide = désactiver).</li>
+        <li>
+          Ouvre l&apos;<b>onglet de suivi</b> où tu veux voir tes candidatures, puis colle l&apos;URL de la barre d&apos;adresse
+          (elle se termine par <code className="rounded bg-gray-100 px-1 text-xs">#gid=…</code>) : les lignes seront ajoutées dans cet
+          onglet, à son format. Sans onglet précis, un onglet « Candidatures » est créé. Vide = désactiver.
+        </li>
       </ol>
       <input
         name="sheetUrl"

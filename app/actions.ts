@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import {
-  STATUSES, createManualRun, deleteCompany, failRun, getApplicationForSheet, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
+  STATUSES, createManualRun, deleteCompany, failRun, addCatalogCompanies, getApplicationForSheet, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
 } from '@/db/dashboard';
 import { decrypt, encrypt, maskSecret } from '@/lib/crypto';
 import { generateCoverLetter } from '@/lib/cover-letter';
@@ -13,7 +13,7 @@ import { requireUserId } from '@/lib/session';
 import { NO_SEARCH_MESSAGE, searchMode } from '@/lib/search-mode';
 import { dispatchSearch, isGithubConfigured } from '@/lib/github';
 import { getReconciledLastRun } from '@/lib/run-status';
-import { ensureApplicationsTab, parseSheetId, syncApplication } from '@/lib/sheets';
+import { checkTrackingTab, parseSheetGid, parseSheetId, syncApplication } from '@/lib/sheets';
 import { mapPool } from '@/lib/concurrency';
 import { COUNTRY_CODES, type CountryCode } from '@/lib/countries';
 import { readCompanyLines } from '@/lib/csv';
@@ -168,6 +168,16 @@ const IMPORT_MAX_BYTES = 200_000;
 const IMPORT_MAX_LINES = 300;
 const IMPORT_BUDGET_MS = 45_000; // sous la durée max de la fonction (60 s), avec une marge
 
+/** Ajoute en un clic des entreprises du catalogue partagé. */
+export async function addFromCatalog(ids: string[]): Promise<ActionResult> {
+  const userId = await requireUserId();
+  const parsed = z.array(z.string().uuid()).min(1, 'Aucune entreprise sélectionnée.').max(400).safeParse(ids);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+  const added = await addCatalogCompanies(userId, [...new Set(parsed.data)]);
+  revalidatePath('/companies');
+  return { ok: true, message: `${added} entreprise${added > 1 ? 's' : ''} ajoutée${added > 1 ? 's' : ''} : leurs offres arriveront à la prochaine recherche.` };
+}
+
 export async function importCompanies(_prev: ImportResult | null, form: FormData): Promise<ImportResult> {
   const userId = await requireUserId();
   const empty = { failed: [], pending: [] };
@@ -240,14 +250,14 @@ export async function changeStatus(offerId: string, status: string): Promise<Act
   const app = await getApplicationForSheet(userId, id);
   if (!app?.sheetId) return { ok: true, message: '' };
   try {
-    const result = await syncApplication(app.sheetId, next, app);
+    const result = await syncApplication(app.sheetId, app.sheetGid, next, app);
     return { ok: true, message: result === 'appended' ? 'Ajoutée au Sheet' : result === 'updated' ? 'Sheet mis à jour' : '' };
   } catch (err) {
     console.error('Synchro Sheet :', err);
     // Nos propres messages « actionnables » (partage manquant, fichier Excel) sont montrés tels quels ;
     // toute autre erreur (HTTP, réseau, jeton) reste dans les logs.
     const raw = (err as Error).message;
-    const actionable = /^(Sheet inaccessible|Ce fichier est un Excel)/.test(raw);
+    const actionable = /^(Sheet inaccessible|Ce fichier est un Excel|Onglet)/.test(raw);
     return {
       ok: false,
       message: `Statut enregistré, mais pas dans le Sheet : ${actionable ? raw : 'réessaie plus tard (problème temporaire avec Google).'}`,
@@ -268,15 +278,20 @@ export async function updateSheet(_prev: ActionResult | null, form: FormData): P
   const sheetId = parseSheetId(raw);
   if (!sheetId) return { ok: false, message: "Ce n'est pas une URL de Google Sheet (docs.google.com/spreadsheets/d/…)." };
 
-  // On vérifie l'accès MAINTENANT (et on prépare l'onglet), plutôt qu'au premier « Postulé »
+  // L'URL copiée depuis le navigateur désigne aussi l'onglet ouvert (#gid=…) : c'est celui-là
+  // qu'on alimentera, dans son format. Sans gid → onglet « Candidatures » géré par l'application.
+  const gid = parseSheetGid(raw);
+
+  // On vérifie l'accès MAINTENANT (et la lisibilité de l'onglet), plutôt qu'au premier « Postulé »
+  let tab: string;
   try {
-    await ensureApplicationsTab(sheetId);
+    tab = await checkTrackingTab(sheetId, gid);
   } catch (err) {
     return { ok: false, message: (err as Error).message };
   }
-  await saveSheetId(userId, sheetId);
+  await saveSheetId(userId, sheetId, gid);
   revalidatePath('/profile');
-  return { ok: true, message: 'Sheet connecté : onglet « Candidatures » prêt.' };
+  return { ok: true, message: `Sheet connecté : les candidatures iront dans l'onglet « ${tab} », à son format.` };
 }
 
 // ─── Recherche manuelle ───

@@ -2,13 +2,14 @@ import type { JobDetail } from '../lib/types';
 import { htmlToText } from '../lib/html';
 import { fold } from '../lib/text';
 import { mapPool } from '../lib/concurrency';
+import { xmlBlocks, xmlText } from '../lib/xml';
 
-// Adapter "pages carrières" : un module, sept ATS. Chaque fonction traduit le format
+// Adapter "pages carrières" : un module, neuf ATS. Chaque fonction traduit le format
 // de l'ATS vers notre JobDetail. Toutes ces API sont publiques, sans clé, et sont celles
 // qu'appellent les pages carrières elles-mêmes dans ton navigateur.
 
 export const SUPPORTED_ATS = [
-  'greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'smartrecruiters', 'workday',
+  'greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'smartrecruiters', 'workday', 'personio', 'teamtailor',
 ] as const;
 export type Ats = (typeof SUPPORTED_ATS)[number];
 export interface CompanyRef { name: string; ats: Ats; slug: string }
@@ -40,7 +41,22 @@ async function getJson<T>(url: string, init: { method?: 'GET' | 'POST'; body?: u
   return (await res.json()) as T;
 }
 
-const isoDay = (d?: string | number | null) => (d ? new Date(d).toISOString().slice(0, 10) : '');
+/** Variante texte (flux XML/RSS) ; null sur 404, comme getJson. */
+async function getText(url: string): Promise<string | null> {
+  const res = await fetch(url, {
+    headers: { Accept: 'application/xml, application/rss+xml, text/xml', 'User-Agent': USER_AGENT },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status} sur ${new URL(url).host}`);
+  return res.text();
+}
+
+const isoDay = (d?: string | number | null) => {
+  if (!d) return '';
+  const t = new Date(d);
+  return Number.isNaN(t.getTime()) ? '' : t.toISOString().slice(0, 10);
+};
 
 // ─── Greenhouse ───
 interface GreenhouseJob {
@@ -324,6 +340,71 @@ async function fetchWorkday(c: CompanyRef, opts: FetchOptions): Promise<JobDetai
   });
 }
 
+// ─── Personio (PME et scale-ups européennes) ───
+// Flux XML public documenté : https://<entreprise>.jobs.personio.de/xml (parfois .com).
+const PERSONIO_HOSTS = ['jobs.personio.de', 'jobs.personio.com'];
+
+async function personioXml(slug: string): Promise<{ xml: string; host: string } | null> {
+  if (!/^[a-z0-9-]+$/i.test(slug)) return null;
+  for (const domain of PERSONIO_HOSTS) {
+    const host = `${slug}.${domain}`;
+    const xml = await getText(`https://${host}/xml?language=fr`).catch(() => null);
+    if (xml && xml.includes('<workzag-jobs')) return { xml, host };
+  }
+  return null;
+}
+
+async function fetchPersonio(c: CompanyRef): Promise<JobDetail[] | null> {
+  const feed = await personioXml(c.slug);
+  if (!feed) return null;
+  return xmlBlocks(feed.xml, 'position').map(p => {
+    const sections = xmlBlocks(p, 'jobDescription').map(d => `${xmlText(d, 'name')}\n${htmlToText(xmlText(d, 'value'))}`);
+    const offices = [xmlText(p, 'office'), ...xmlBlocks(xmlText(p, 'additionalOffices') || '', 'office').map(o => o.trim())];
+    return {
+      title: xmlText(p, 'name'),
+      company: c.name,
+      location: [...new Set(offices.filter(Boolean))].join(' | '),
+      description: sections.join('\n\n'),
+      qualifications: [xmlText(p, 'seniority'), xmlText(p, 'yearsOfExperience')].filter(Boolean).join(' · '),
+      salary: 'Non précisé',
+      employmentType: [xmlText(p, 'employmentType'), xmlText(p, 'schedule')].filter(Boolean).join(', '),
+      datePosted: isoDay(xmlText(p, 'createdAt')),
+      url: `https://${feed.host}/job/${xmlText(p, 'id')}`,
+      source: 'personio',
+    };
+  });
+}
+
+// ─── Teamtailor (startups et scale-ups, très présent en France et en Europe du Nord) ───
+// Flux RSS public : <site carrières>/jobs.rss. L'identifiant stocké est l'HÔTE du site
+// carrières (« acme.teamtailor.com », ou un domaine personnalisé « careers.acme.com »).
+async function teamtailorRss(host: string): Promise<string | null> {
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(host)) return null;
+  const xml = await getText(`https://${host}/jobs.rss`).catch(() => null);
+  return xml && xml.includes('<rss') ? xml : null;
+}
+
+async function fetchTeamtailor(c: CompanyRef): Promise<JobDetail[] | null> {
+  const xml = await teamtailorRss(c.slug);
+  if (!xml) return null;
+  return xmlBlocks(xml, 'item').map(item => {
+    // Lieux : balises de l'espace de noms tt (ville, pays), présentes selon les comptes
+    const location = [...new Set([...xmlBlocks(item, 'tt:city'), ...xmlBlocks(item, 'tt:country')].map(s => s.trim()).filter(Boolean))].join(', ');
+    return {
+      title: xmlText(item, 'title'),
+      company: c.name,
+      location: location || xmlText(item, 'remoteStatus'),
+      description: htmlToText(xmlText(item, 'description')),
+      qualifications: '',
+      salary: 'Non précisé',
+      employmentType: '',
+      datePosted: isoDay(xmlText(item, 'pubDate')),
+      url: xmlText(item, 'link'),
+      source: 'teamtailor',
+    };
+  });
+}
+
 const FETCHERS: Record<Ats, (c: CompanyRef, opts: FetchOptions) => Promise<JobDetail[] | null>> = {
   greenhouse: fetchGreenhouse,
   lever: fetchLever,
@@ -332,6 +413,8 @@ const FETCHERS: Record<Ats, (c: CompanyRef, opts: FetchOptions) => Promise<JobDe
   recruitee: fetchRecruitee,
   smartrecruiters: fetchSmartRecruiters,
   workday: fetchWorkday,
+  personio: fetchPersonio,
+  teamtailor: fetchTeamtailor,
 };
 
 /** Type guard : l'ATS stocké en base a-t-il un adapter ? */
@@ -378,6 +461,12 @@ export function parseCareersUrl(raw: string): { ats: Ats; slug: string } | null 
   const recruitee = /^([a-z0-9-]+)\.recruitee\.com$/.exec(host);
   if (recruitee) return { ats: 'recruitee', slug: recruitee[1] };
 
+  const personio = /^([a-z0-9-]+)\.jobs\.personio\.(de|com)$/.exec(host);
+  if (personio) return { ats: 'personio', slug: personio[1] };
+
+  // Teamtailor : sous-domaine teamtailor.com, ou domaine personnalisé désigné par son flux /jobs.rss
+  if (/\.teamtailor\.com$/.test(host) || u.pathname.replace(/\/$/, '').endsWith('/jobs.rss')) return { ats: 'teamtailor', slug: host };
+
   const workday = /^([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com$/.exec(host);
   if (workday && first) return { ats: 'workday', slug: `${workday[1]}.${workday[2]}/${first}` };
 
@@ -407,6 +496,14 @@ const PROBES: Record<Ats, (slug: string) => Promise<number | null>> = {
   workable: async s => (await getJson<{ jobs?: unknown[] }>(`https://apply.workable.com/api/v1/widget/accounts/${encodeURIComponent(s)}`))?.jobs?.length ?? null,
   recruitee: async s => (/^[a-z0-9-]+$/i.test(s) ? ((await getJson<{ offers?: unknown[] }>(`https://${s}.recruitee.com/api/offers/`))?.offers?.length ?? null) : null),
   smartrecruiters: async s => (await getJson<{ totalFound?: number }>(`https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(s)}/postings?limit=1`))?.totalFound ?? null,
+  personio: async s => {
+    const feed = await personioXml(s);
+    return feed ? xmlBlocks(feed.xml, 'position').length : null;
+  },
+  teamtailor: async s => {
+    const xml = await teamtailorRss(s);
+    return xml ? xmlBlocks(xml, 'item').length : null;
+  },
   workday: async s => {
     const wd = parseWorkdaySlug(s);
     if (!wd) return null;
@@ -427,7 +524,7 @@ export function slugCandidates(name: string): string[] {
 }
 
 /** ATS devinables à partir du seul nom (Workday exige l'URL, cf. parseCareersUrl). */
-const GUESSABLE: Ats[] = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'smartrecruiters'];
+const GUESSABLE: Ats[] = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'smartrecruiters', 'personio', 'teamtailor'];
 
 /**
  * Détecte sur quel ATS une entreprise publie ses offres.
@@ -436,11 +533,13 @@ const GUESSABLE: Ats[] = ['greenhouse', 'lever', 'ashby', 'workable', 'recruitee
  */
 export async function detectAts(name: string): Promise<{ ref: CompanyRef; jobCount: number } | null> {
   for (const slug of slugCandidates(name)) {
-    const counts = await Promise.all(GUESSABLE.map(async ats => ({ ats, count: await probeCompany(ats, slug) })));
+    // Teamtailor s'identifie par l'hôte du site carrières : on essaie <slug>.teamtailor.com
+    const idFor = (ats: Ats) => (ats === 'teamtailor' ? `${slug}.teamtailor.com` : slug);
+    const counts = await Promise.all(GUESSABLE.map(async ats => ({ ats, id: idFor(ats), count: await probeCompany(ats, idFor(ats)) })));
     const best = counts
-      .filter((c): c is { ats: Ats; count: number } => c.count !== null && c.count > 0)
+      .filter((c): c is { ats: Ats; id: string; count: number } => c.count !== null && c.count > 0)
       .sort((a, b) => b.count - a.count)[0];
-    if (best) return { ref: { name, ats: best.ats, slug }, jobCount: best.count };
+    if (best) return { ref: { name, ats: best.ats, slug: best.id }, jobCount: best.count };
   }
   return null;
 }

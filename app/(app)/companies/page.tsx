@@ -1,7 +1,8 @@
 import { CompanyForm } from '../../components/CompanyForm';
 import { ImportCompaniesForm } from '../../components/ImportCompaniesForm';
 import { removeCompany } from '../../actions';
-import { listCompanies } from '@/db/dashboard';
+import { listCatalog, listCompanies } from '@/db/dashboard';
+import { CatalogPicker } from '../../components/CatalogPicker';
 import { requireUserId } from '@/lib/session';
 
 // Durée max des fonctions de cette page, server actions comprises : l'import d'un fichier
@@ -10,16 +11,25 @@ export const maxDuration = 60;
 
 export default async function CompaniesPage() {
   const userId = await requireUserId();
-  const companies = await listCompanies(userId);
+  const [companies, catalog] = await Promise.all([listCompanies(userId), listCatalog(userId)]);
 
   return (
     <div className="space-y-6">
       <section className="rounded-xl border bg-white p-6">
         <h1 className="mb-1 text-lg font-semibold">Entreprises suivies ({companies.length})</h1>
         <p className="mb-4 text-sm text-gray-600">
-          Leurs offres sont lues directement sur leur page carrières chaque matin (Greenhouse, Lever, Ashby, Workable, Recruitee, SmartRecruiters, Workday). Les autres restent couvertes par Adzuna.
+          Leurs offres sont lues directement sur leur page carrières chaque matin (Greenhouse, Lever, Ashby, Workable, Recruitee, SmartRecruiters, Workday, Personio, Teamtailor). Les autres restent couvertes par les agrégateurs (Adzuna, France Travail).
         </p>
         <CompanyForm />
+      </section>
+
+      <section className="rounded-xl border bg-white p-6">
+        <h2 className="mb-1 font-semibold">Entreprises suggérées ({catalog.length})</h2>
+        <p className="mb-4 text-sm text-gray-600">
+          Catalogue partagé d&apos;employeurs vérifiés : leurs offres sont lisibles par l&apos;agent et ils recrutent en ce moment.
+          Coche celles qui t&apos;intéressent et ajoute-les en une fois.
+        </p>
+        <CatalogPicker items={catalog} />
       </section>
 
       <section className="rounded-xl border bg-white p-6">
