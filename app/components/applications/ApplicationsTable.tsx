@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { changeStages, removeApplications } from '../../applications-actions';
 import { STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { ApplicationRow, type ApplicationView } from './ApplicationRow';
+import { useDragSelect } from './useDragSelect';
 
 // Tableau du suivi avec sélection multiple. La sélection est un état CLIENT (un Set d'id) :
 // elle n'a pas besoin du serveur tant qu'on n'agit pas. Seule la suppression part au serveur,
@@ -21,11 +22,8 @@ export function ApplicationsTable({ rows, emptyMessage, categories }: { rows: (A
     setSelected(prev => new Set([...prev].filter(id => visible.has(id))));
   }, [rows]);
 
-  const toggle = (id: string) => setSelected(prev => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
+  // Cliquer-glisser sur les lignes, Maj + clic pour une plage, Espace au clavier
+  const { onPointerDown, onCheckboxChange } = useDragSelect(rows.map(r => r.id), selected, setSelected);
   const allChecked = rows.length > 0 && selected.size === rows.length;
   const toggleAll = () => setSelected(allChecked ? new Set() : new Set(rows.map(r => r.id)));
   const n = selected.size;
@@ -95,6 +93,9 @@ export function ApplicationsTable({ rows, emptyMessage, categories }: { rows: (A
           )}
         </div>
       )}
+      <p className="px-3 pt-2 text-xs text-gray-400">
+        Astuce : clique et glisse sur les lignes pour en sélectionner plusieurs · Maj + clic pour une plage
+      </p>
       <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
@@ -107,9 +108,9 @@ export function ApplicationsTable({ rows, emptyMessage, categories }: { rows: (A
             <th className="px-2">Last contact</th><th className="px-2">Notes</th><th className="sticky right-0 border-l bg-gray-50 px-2"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
-        <tbody>
+        <tbody onPointerDown={onPointerDown}>
           {rows.map((a, i) => (
-            <ApplicationRow key={a.id} a={a} index={i + 1} contactsHref={a.contactsHref} selected={selected.has(a.id)} onToggle={() => toggle(a.id)} categories={categories} />
+            <ApplicationRow key={a.id} a={a} index={i + 1} contactsHref={a.contactsHref} selected={selected.has(a.id)} onToggle={() => onCheckboxChange(a.id)} categories={categories} />
           ))}
         </tbody>
       </table>

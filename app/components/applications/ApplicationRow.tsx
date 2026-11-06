@@ -26,11 +26,12 @@ export function ApplicationRow({ a, index, contactsHref, selected, onToggle, cat
   const save = (field: string) => (value: string) => editApplication(a.id, field, field === 'lastContact' ? (value || null) : value);
 
   return (
-    <tr className={`border-t align-top ${selected ? 'bg-blue-50/70' : a.followUp ? 'bg-amber-50/60' : ''} ${deleting ? 'opacity-40' : ''}`}>
-      <td className="py-2 pl-3 pr-1">
+    <tr data-row-id={a.id} className={`cursor-default border-t align-top ${selected ? 'bg-blue-50/70' : a.followUp ? 'bg-amber-50/60' : ''} ${deleting ? 'opacity-40' : ''}`}>
+      {/* touch-none : sur écran tactile, glisser depuis la case sélectionne au lieu de faire défiler */}
+      <td className="cursor-pointer touch-none select-none py-2 pl-3 pr-1">
         <input type="checkbox" checked={selected} onChange={onToggle} aria-label={`Sélectionner ${a.company}`} className="size-4 accent-gray-900" />
       </td>
-      <td className="px-2 py-2 text-xs text-gray-400">{index}</td>
+      <td className="cursor-pointer touch-none select-none px-2 py-2 text-xs text-gray-400">{index}</td>
       <td className="min-w-40 px-1 py-1">
         <EditText value={a.company} save={save('company')} className="font-medium" />
         {a.contacts.length > 0 && (
