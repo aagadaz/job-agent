@@ -45,6 +45,8 @@ export const profiles = pgTable('profiles', {
   sheetId: text('sheet_id'), // Google Sheet de suivi des candidatures (facultatif)
   // Onglet choisi (le #gid=… de l'URL). null = onglet « Candidatures » géré par l'application
   sheetGid: integer('sheet_gid'),
+  // Objectif de candidatures par semaine (tableau de bord de l'onglet Candidatures)
+  weeklyGoal: integer('weekly_goal').notNull().default(10),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -184,6 +186,12 @@ export const applications = pgTable('applications', {
   stage: applicationStageEnum('stage').notNull().default('applied'),
   lastContact: date('last_contact'),                        // AAAA-MM-JJ
   notes: text('notes').notNull().default(''),
+  // ─── Pour le tableau de bord ───
+  // D'où vient la ligne : 'agent' (fil), 'manual' (saisie), 'sheet' (import du Google Sheet)
+  origin: text('origin').notNull().default('manual'),
+  appliedAt: date('applied_at'),                            // date d'envoi (null = pas encore envoyée)
+  respondedAt: date('responded_at'),                        // 1re réponse de l'entreprise (posée une seule fois)
+  interviewed: boolean('interviewed').notNull().default(false), // a atteint « In conversation » au moins une fois
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

@@ -1,10 +1,13 @@
 import Link from 'next/link';
-import { importFromFeed, listApplications, listContacts } from '@/db/applications';
+import { backfillMilestones, getSheetSettings, getWeeklyGoal, importFromFeed, listApplications, listContacts } from '@/db/applications';
+import { computeDashboard } from '@/lib/application-stats';
 import { STAGES, STAGE_KEYS, companyKey, needsFollowUp, RELANCE_DAYS, type Stage } from '@/lib/applications';
 import { requireUserId } from '@/lib/session';
 import { ApplicationRow, type ApplicationView } from '../../components/applications/ApplicationRow';
 import { AddApplicationForm } from '../../components/applications/AddApplicationForm';
 import { AddContactForm, ContactRow, type ContactView } from '../../components/applications/ContactsPanel';
+import { Dashboard } from '../../components/applications/Dashboard';
+import { ImportSheetForm } from '../../components/applications/ImportSheetForm';
 
 type Params = { tab?: string; stage?: string; q?: string; relance?: string; company?: string };
 
@@ -15,7 +18,9 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
 
   // Les offres du fil déjà marquées « Postulé »… rejoignent le suivi (idempotent)
   await importFromFeed(userId);
-  const [apps, contacts] = await Promise.all([listApplications(userId), listContacts(userId)]);
+  await backfillMilestones(userId);
+  const [apps, contacts, goal, sheet] = await Promise.all([listApplications(userId), listContacts(userId), getWeeklyGoal(userId), getSheetSettings(userId)]);
+  const dashboard = computeDashboard(apps.map(a => ({ ...a, stage: a.stage as Stage })), goal);
 
   // Rapprochement entreprise ↔ contacts, par nom normalisé
   const contactsBy = new Map<string, typeof contacts>();
@@ -40,11 +45,6 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
     && (!q || `${v.company} ${v.title} ${v.notes}`.toLowerCase().includes(q)),
   );
 
-  // Statistiques
-  const sent = views.filter(v => v.stage !== 'not_started').length;
-  const answered = views.filter(v => ['in_conversation', 'unsuccessful', 'committed'].includes(v.stage)).length;
-  const weekAgo = Date.now() - 7 * 86_400_000;
-  const thisWeek = apps.filter(a => a.stage !== 'not_started' && a.lastContact && new Date(a.lastContact).getTime() >= weekAgo).length;
   const toFollow = views.filter(v => v.followUp).length;
   const counts = Object.fromEntries(STAGE_KEYS.map(s => [s, views.filter(v => v.stage === s).length]));
 
@@ -66,8 +66,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
         <div>
           <h1 className="text-lg font-semibold">Candidatures</h1>
           <p className="text-sm text-gray-500">
-            {sent} envoyée{sent > 1 ? 's' : ''} · {thisWeek} cette semaine · taux de réponse {sent ? Math.round((answered / sent) * 100) : 0} %
-            {' · '}{counts.in_conversation} en discussion
+            {dashboard.sent} envoyée{dashboard.sent > 1 ? 's' : ''} · {counts.in_conversation} en discussion · {toFollow} à relancer
           </p>
         </div>
         <nav className="flex gap-1 rounded-lg border bg-white p-1 text-sm">
@@ -80,14 +79,22 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
         <>
           {toFollow > 0 && !relance && (
             <Link href={href({ relance: '1', stage: undefined })} className="block rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
-              <b>{toFollow} candidature{toFollow > 1 ? 's' : ''} à relancer</b> : envoyée{toFollow > 1 ? 's' : ''} il y a plus de {RELANCE_DAYS} jours sans nouvelles. Voir →
+              <b>{toFollow} candidature{toFollow > 1 ? 's' : ''} à relancer</b> : sans nouvelles depuis {RELANCE_DAYS} à 30 jours. Voir →
             </Link>
           )}
 
-          <section className="rounded-xl border bg-white p-4">
-            <h2 className="mb-3 text-sm font-medium">Ajouter une candidature faite ailleurs</h2>
-            <AddApplicationForm />
-          </section>
+          {views.length > 0 && <Dashboard d={dashboard} />}
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            <details className="rounded-xl border bg-white p-4" open={views.length === 0}>
+              <summary className="cursor-pointer text-sm font-medium">Importer depuis mon Google Sheet</summary>
+              <div className="mt-3"><ImportSheetForm connectedTab={sheet.sheetId !== null} /></div>
+            </details>
+            <details className="rounded-xl border bg-white p-4" open={views.length === 0}>
+              <summary className="cursor-pointer text-sm font-medium">Ajouter une candidature faite ailleurs</summary>
+              <div className="mt-3"><AddApplicationForm /></div>
+            </details>
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <Link href={href({ stage: undefined, relance: undefined })} className={chip(!stage && !relance)}>Toutes ({views.length})</Link>

@@ -73,7 +73,7 @@ const colLetter = (i: number): string => (i < 26 ? String.fromCharCode(65 + i) :
 
 // ─── Reconnaissance des colonnes ───
 
-type Field = 'date' | 'company' | 'title' | 'location' | 'status' | 'url' | 'source' | 'score' | 'contract';
+type Field = 'date' | 'company' | 'title' | 'location' | 'status' | 'url' | 'source' | 'score' | 'contract' | 'companyType' | 'notes' | 'contact';
 
 // En-têtes reconnus (comparés en minuscules, sans accents). Une colonne « Contact » (une
 // personne) n'est PAS une date : seuls des intitulés explicites sont acceptés.
@@ -87,6 +87,10 @@ const ALIASES: Record<Field, RegExp> = {
   source: /^(source)$/,
   score: /^(score|note)$/,
   contract: /^(type|contrat|type de contrat)$/,
+  // Lus seulement à l'import (jamais écrits par la synchro)
+  companyType: /^(type d.entreprise|type entreprise|secteur|industrie)$/,
+  notes: /^(notes?|commentaires?|remarques?)$/,
+  contact: /^(contacts?|personne de contact|interlocuteur|referent)$/,
 };
 
 interface Layout {
@@ -291,4 +295,59 @@ export async function syncApplication(
   });
   await sheetsFetch(`${spreadsheetId}:batchUpdate`, { method: 'POST', body: { requests } });
   return 'appended';
+}
+
+// ─── Import : lire les lignes existantes de l'onglet de suivi ───
+
+export interface TrackedRow {
+  company: string;
+  companyType: string;
+  title: string;
+  url: string;        // colonne Lien, ou lien posé sur l'intitulé du poste
+  contract: string;
+  status: string;     // libellé brut (« 3. In conversation »)
+  date: string;       // texte brut de la colonne date (« 26 octobre »)
+  notes: string;
+  contact: string;    // nom(s) de la colonne Contact, s'il y en a une
+}
+
+type GridCell = { formattedValue?: string; hyperlink?: string; textFormatRuns?: { format?: { link?: { uri?: string } } }[] };
+
+const MAX_IMPORT_ROWS = 2000;
+
+/**
+ * Lit toutes les lignes remplies de l'onglet de suivi (celui du Profil, ou un autre gid).
+ * On demande à l'API les valeurs AFFICHÉES et les liens (champ hyperlink, ou lien en texte
+ * enrichi) : c'est souvent sur l'intitulé du poste que le lien de l'offre est posé.
+ */
+export async function readTrackingRows(spreadsheetId: string, gid: number | null): Promise<{ tab: string; rows: TrackedRow[] }> {
+  const layout = await loadLayout(spreadsheetId, gid);
+  const { cols } = layout;
+  const width = Math.max(...Object.values(cols).map(i => i ?? 0)) + 1;
+  const range = a1(layout.tab, `A${layout.headerRow + 2}:${colLetter(width - 1)}${layout.headerRow + 1 + MAX_IMPORT_ROWS}`);
+  const data = await sheetsFetch<{ sheets?: { data?: { rowData?: { values?: GridCell[] }[] }[] }[] }>(
+    `${spreadsheetId}?ranges=${range}&fields=sheets.data.rowData.values(formattedValue,hyperlink,textFormatRuns.format.link.uri)`,
+  );
+  const grid = data.sheets?.[0]?.data?.[0]?.rowData ?? [];
+  const get = (r: GridCell[], f: Field) => (cols[f] === undefined ? '' : (r[cols[f]!]?.formattedValue ?? '').trim());
+  const linkOf = (c?: GridCell) => c?.hyperlink ?? c?.textFormatRuns?.find(t => t.format?.link?.uri)?.format?.link?.uri ?? '';
+
+  const rows: TrackedRow[] = [];
+  for (const { values = [] } of grid) {
+    const company = get(values, 'company');
+    const title = get(values, 'title');
+    if (!company) continue; // ligne vide, ou ligne de séparation
+    const urlCell = cols.url !== undefined ? get(values, 'url') : '';
+    rows.push({
+      company, title,
+      companyType: get(values, 'companyType'),
+      url: /^https?:\/\//i.test(urlCell) ? urlCell : linkOf(values[cols.url ?? cols.title!]) || linkOf(values[cols.title!]),
+      contract: get(values, 'contract'),
+      status: get(values, 'status'),
+      date: get(values, 'date'),
+      notes: get(values, 'notes'),
+      contact: get(values, 'contact'),
+    });
+  }
+  return { tab: layout.tab, rows };
 }
