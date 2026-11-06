@@ -9,7 +9,7 @@ export type RejectReason = 'score' | 'experience' | 'expired' | 'source';
 // ─── Énumérations : des ensembles fermés de valeurs, vérifiés par PostgreSQL ───
 // Ajouter une valeur = migration "ALTER TYPE ... ADD VALUE" (toujours en fin de liste)
 export const atsEnum = pgEnum('ats', [
-  'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'workable', 'recruitee', 'personio', 'teamtailor',
+  'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'workable', 'recruitee', 'personio', 'teamtailor', 'website',
 ]);
 export const verdictEnum = pgEnum('verdict', ['postuler', 'a_etudier', 'ignorer']);
 export const statusEnum = pgEnum('application_status', [

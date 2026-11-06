@@ -24,7 +24,7 @@ import { fetchCompanyJobs } from './sources/ats';
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
 
 /** Collecte toutes les sources en parallèle. Une source en panne n'empêche pas les autres. */
-async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean): Promise<JobDetail[]> {
+async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean, seen: Set<string>): Promise<JobDetail[]> {
   const companies = await getCompanies(userId);
   const countries = [...new Set(areas.map(a => a.country))];
 
@@ -53,7 +53,7 @@ async function collect(userId: string, keywords: string[], areas: SearchArea[], 
       label: `${c.name} (${c.ats})`,
       // Les pages carrières publient des postes dans le monde entier : on garde les pays voulus.
       // Les gros ATS (Workday, SmartRecruiters) sont interrogés avec les mots-clés du profil.
-      run: async () => keepInCountries((await fetchCompanyJobs(c, { keywords })) ?? [], countries),
+      run: async () => keepInCountries((await fetchCompanyJobs(c, { keywords, knownUrls: seen })) ?? [], countries),
     })),
   ];
 
@@ -92,13 +92,13 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   console.log(`   ${keywords.length} mots-clés · ${areas.length} zone(s) de recherche`);
 
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
-  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna);
-  const unique = dedupeAcrossSources(fetched);
-  // Toutes les offres renvoyées sont « encore en ligne », y compris celles déjà vues :
-  // c'est ce qui permet ensuite de repérer celles qui ont disparu (= probablement fermées)
-  await touchOffers(unique.map(o => o.url));
-  const filtered = includeByTitle(excludeByTitle(unique, profile.excludeTerms), profile.includeTerms);
   const seen = await getSeenUrls(user.id);
+  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna, seen);
+  // Toutes les offres renvoyées sont « encore en ligne », y compris celles déjà vues (et les pages
+  // de sites carrières non relues) : c'est ce qui permet de repérer celles qui ont disparu
+  await touchOffers(fetched.map(o => o.url));
+  const unique = dedupeAcrossSources(fetched.filter(o => !o.knownOnly));
+  const filtered = includeByTitle(excludeByTitle(unique, profile.excludeTerms), profile.includeTerms);
   const fresh = filtered.filter(o => !seen.has(normalizeUrl(o.url)));
   console.log(`   ${fetched.length} collectées → ${unique.length} uniques → ${filtered.length} après filtres → ${fresh.length} nouvelles`);
 

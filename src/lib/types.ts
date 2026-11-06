@@ -10,6 +10,7 @@ export interface JobDetail{
     source: string; // 'adzuna', 'greenhouse', 'lever', 'ashby'
     qualifications:string;
     country?: string | null; // code ISO (fr, lu…) ; null = lieu non précisé
+    knownOnly?: boolean; // page déjà connue, non relue : sert seulement à dire « toujours en ligne »
 }
 
 export interface OfferScore{

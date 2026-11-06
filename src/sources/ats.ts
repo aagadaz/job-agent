@@ -3,6 +3,7 @@ import { htmlToText } from '../lib/html';
 import { fold } from '../lib/text';
 import { mapPool } from '../lib/concurrency';
 import { xmlBlocks, xmlText } from '../lib/xml';
+import { fetchWebsiteJobs, probeWebsite } from './website';
 
 // Adapter "pages carrières" : un module, neuf ATS. Chaque fonction traduit le format
 // de l'ATS vers notre JobDetail. Toutes ces API sont publiques, sans clé, et sont celles
@@ -10,6 +11,7 @@ import { xmlBlocks, xmlText } from '../lib/xml';
 
 export const SUPPORTED_ATS = [
   'greenhouse', 'lever', 'ashby', 'workable', 'recruitee', 'smartrecruiters', 'workday', 'personio', 'teamtailor',
+  'website', // site carrières quelconque, lu via ses données structurées JobPosting (cf. website.ts)
 ] as const;
 export type Ats = (typeof SUPPORTED_ATS)[number];
 export interface CompanyRef { name: string; ats: Ats; slug: string }
@@ -19,6 +21,8 @@ export interface FetchOptions {
   keywords?: string[];
   /** Plafond d'offres détaillées par entreprise (chaque détail = 1 requête HTTP). */
   maxJobs?: number;
+  /** URLs déjà en base (normalisées) : les sites carrières ne relisent pas ces pages. */
+  knownUrls?: Set<string>;
 }
 
 const USER_AGENT = 'job-agent/1.0 (+https://github.com/aagadaz/job-agent)';
@@ -415,6 +419,7 @@ const FETCHERS: Record<Ats, (c: CompanyRef, opts: FetchOptions) => Promise<JobDe
   workday: fetchWorkday,
   personio: fetchPersonio,
   teamtailor: fetchTeamtailor,
+  website: (c, opts) => fetchWebsiteJobs(c.name, c.slug, { knownUrls: opts.knownUrls }),
 };
 
 /** Type guard : l'ATS stocké en base a-t-il un adapter ? */
@@ -504,6 +509,10 @@ const PROBES: Record<Ats, (slug: string) => Promise<number | null>> = {
     const xml = await teamtailorRss(s);
     return xml ? xmlBlocks(xml, 'item').length : null;
   },
+  website: async s => {
+    const r = await probeWebsite(s);
+    return r.ok ? r.count : null;
+  },
   workday: async s => {
     const wd = parseWorkdaySlug(s);
     if (!wd) return null;
@@ -546,7 +555,7 @@ export async function detectAts(name: string): Promise<{ ref: CompanyRef; jobCou
 
 export type ResolveResult =
   | { ok: true; ref: CompanyRef; jobCount: number }
-  | { ok: false; reason: 'invalid_url' | 'unreachable' | 'not_found' };
+  | { ok: false; reason: 'invalid_url' | 'unreachable' | 'not_found' | 'robots' | 'blocked' | 'no_structured_data' | 'excluded' };
 
 /**
  * Point d'entrée unique pour ajouter une entreprise (formulaire, import de fichier, CLI) :
@@ -557,7 +566,14 @@ export type ResolveResult =
 export async function resolveCompany(name: string, careersUrl?: string): Promise<ResolveResult> {
   if (careersUrl?.trim()) {
     const parsed = parseCareersUrl(careersUrl);
-    if (!parsed) return { ok: false, reason: 'invalid_url' };
+    if (!parsed) {
+      // ATS inconnu : on tente la lecture « Site carrières » (robots.txt + données JobPosting)
+      let url: URL;
+      try { url = new URL(careersUrl.trim()); } catch { return { ok: false, reason: 'invalid_url' }; }
+      if (!/^https?:$/.test(url.protocol)) return { ok: false, reason: 'invalid_url' };
+      const site = await probeWebsite(url.href);
+      return site.ok ? { ok: true, ref: { name, ats: 'website', slug: url.href }, jobCount: site.count } : { ok: false, reason: site.reason };
+    }
     const count = await probeCompany(parsed.ats, parsed.slug);
     return count === null ? { ok: false, reason: 'unreachable' } : { ok: true, ref: { name, ...parsed }, jobCount: count };
   }

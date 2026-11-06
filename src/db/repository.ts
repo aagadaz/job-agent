@@ -147,7 +147,8 @@ export async function finishRun(
  */
 export const STALE_AFTER_DAYS = 3;
 export const AGGREGATOR_MAX_AGE_DAYS = 21;
-const AGGREGATORS = ['adzuna', 'francetravail'];
+// « website » aussi : on n'y lit qu'une partie des pages, une absence ne prouve rien
+const AGGREGATORS = ['adzuna', 'francetravail', 'website'];
 
 /**
  * « Cette offre est toujours en ligne » : met à jour fetched_at de toutes les offres DÉJÀ en

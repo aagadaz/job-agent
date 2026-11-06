@@ -1,1 +1,47 @@
 @import "tailwindcss";
+
+/* ─── Thème « sobre et pro » ───
+   Principe : les utilitaires Tailwind (bg-white, text-gray-500, bg-red-50…) lisent des
+   VARIABLES CSS (--color-gray-500…). En mode sombre, on redéfinit ces variables : toute
+   l'interface bascule sans toucher aux composants. Le gris devient une échelle inversée
+   (le « blanc » des cartes devient un gris très foncé, le texte gray-900 devient clair). */
+
+/* dark: dans les classes = attribut data-theme="dark" posé sur <html> (choix de l'utilisateur) */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  /* Tailwind 4 colore les bordures en currentColor par défaut : on revient à un gris discret */
+  *, ::before, ::after { border-color: var(--color-gray-200); }
+  html { color-scheme: light; }
+  body { font-feature-settings: "cv11", "ss01"; }
+  :focus-visible { outline: 2px solid var(--color-blue-600); outline-offset: 2px; }
+}
+
+[data-theme=dark] {
+  color-scheme: dark; /* champs, cases à cocher et barres de défilement natifs en sombre */
+
+  --color-white: #17181b;           /* surfaces (cartes, en-tête) */
+  --color-gray-50: #0e0f11;         /* fond de page */
+  --color-gray-100: #1e2024;
+  --color-gray-200: #2a2c31;        /* bordures */
+  --color-gray-300: #3a3d44;
+  --color-gray-400: #6b6f78;
+  --color-gray-500: #9a9ea8;        /* texte secondaire */
+  --color-gray-600: #b3b7c0;
+  --color-gray-700: #d0d3d9;
+  --color-gray-800: #e3e5e9;
+  --color-gray-900: #f3f4f6;        /* texte principal ; boutons primaires clairs */
+
+  --color-red-50: #2a1417;   --color-red-100: #3a181c;   --color-red-200: #5a2026;
+  --color-red-600: #f28b8b;  --color-red-700: #f7a8a8;   --color-red-800: #fbc8c8;
+  --color-green-50: #10241a; --color-green-100: #143021; --color-green-200: #1d4a31;
+  --color-green-700: #86dba9; --color-green-800: #a8e8c2;
+  --color-amber-50: #2a2010; --color-amber-100: #3a2c12; --color-amber-200: #5a4418;
+  --color-amber-700: #f0c36a; --color-amber-800: #f5d48e; --color-amber-900: #f8e2b0;
+  --color-blue-50: #121c2e;  --color-blue-100: #172440;  --color-blue-200: #22355c;
+  --color-blue-600: #7aa7ff; --color-blue-700: #9bbcff;  --color-blue-800: #b8d0ff; --color-blue-900: #d3e2ff;
+}

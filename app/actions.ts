@@ -135,9 +135,13 @@ const CompanySchema = z.object({
 });
 
 const RESOLVE_ERRORS = {
-  invalid_url: `URL non reconnue. ATS pris en charge : ${SUPPORTED_ATS.join(', ')}.`,
+  invalid_url: 'Adresse invalide : colle l\u2019URL complète de la page carrières (https://…).',
   unreachable: "Le tableau d'offres ne répond pas à cette adresse : vérifie l'URL.",
-  not_found: 'Aucun flux public trouvé. Colle l\'URL de sa page carrières (obligatoire pour Workday), sinon elle reste couverte par Adzuna.',
+  not_found: 'Aucun flux public trouvé. Colle l\'URL de sa page carrières (obligatoire pour Workday, ou pour un site carrières maison).',
+  excluded: 'Ce site est exclu de la collecte (LinkedIn, Indeed).',
+  robots: 'Ce site interdit la lecture automatique (robots.txt) : on le respecte. Ses offres restent accessibles via les agrégateurs.',
+  blocked: 'Ce site bloque les robots (protection anti-robots ou accès refusé) : on ne contourne pas ces protections.',
+  no_structured_data: 'Page lisible, mais aucune offre au format standard (JobPosting) n\'y a été trouvée. Essaie l\'URL d\'une page d\'offre ou de la liste des offres.',
 } as const;
 
 export async function addCompany(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {

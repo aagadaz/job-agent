@@ -7,12 +7,12 @@ import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
 import { ClosedButton } from '../../components/ClosedButton';
 import { StatusSelect } from '../../components/StatusSelect';
-import {
-  SORTS, SORT_LABELS, STATUSES, countOffersByCountry, getUserWithProfile, listOffers,
-  type ApplicationStatus, type OfferSort,
-} from '@/db/dashboard';
+import { SORTS, SORT_LABELS, feedFacets, getUserWithProfile, listOffers } from '@/db/dashboard';
+import { STATUS_LABELS } from '@/lib/status';
+import { AutoSubmitForm } from '../../components/AutoSubmitForm';
+import { SINCE_OPTIONS, SCORE_OPTIONS, activeCount, filtersHref, parseFilters, type ParsedFilters, type RawParams } from './filters';
 import { searchMode } from '@/lib/search-mode';
-import { COUNTRY_CODES, countryLabel } from '@/lib/countries';
+import { countryLabel } from '@/lib/countries';
 import { REDIRECTING_SOURCES, offerSearchLinks } from '@/lib/search-links';
 import { getReconciledLastRun } from '@/lib/run-status';
 import { isAdmin, requireUserId } from '@/lib/session';
@@ -24,28 +24,24 @@ const REJECT_LABELS = {
   expired: 'probablement fermée (retirée par l\u2019entreprise ou annonce trop ancienne)',
 } as const;
 
-export default async function OffersPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ rejected?: string; status?: string; dismissed?: string; country?: string; sort?: string }>;
-}) {
+const SOURCE_LABELS: Record<string, string> = {
+  adzuna: 'Adzuna', francetravail: 'France Travail', greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby',
+  workable: 'Workable', recruitee: 'Recruitee', smartrecruiters: 'SmartRecruiters', workday: 'Workday',
+  personio: 'Personio', teamtailor: 'Teamtailor', website: 'Site carrières',
+};
+const SINCE_LABELS: Record<number, string> = { 1: 'Dernières 24 h', 7: '7 derniers jours', 30: '30 derniers jours' };
+
+export default async function OffersPage({ searchParams }: { searchParams: Promise<RawParams> }) {
   const userId = await requireUserId();
-  const params = await searchParams;
-  const showRejected = params.rejected === '1';
-  const dismissed = params.dismissed === '1'; // vue « Corbeille »
-  // Valeur venant de l'URL : on ne la garde que si elle fait partie des statuts connus
-  const status = STATUSES.find(s => s === params.status) as ApplicationStatus | undefined;
+  // Tous les filtres viennent de l'URL, validés par liste blanche (cf. filters.ts)
+  const f: ParsedFilters = parseFilters(await searchParams);
+  const { showRejected, sort } = f;
+  const dismissed = !!f.dismissed; // vue « Corbeille »
+  const nActive = activeCount(f);
 
-  // Pays venant de l'URL : accepté seulement s'il est connu (ou 'none' = pays non déterminé)
-  const country = params.country === 'none' || COUNTRY_CODES.includes(params.country as never) ? params.country : undefined;
-
-  // Tri : 'recent' par défaut (les nouvelles offres en haut) ; toute valeur inconnue est ignorée
-  const sort: OfferSort = SORTS.find(s => s === params.sort) ?? 'recent';
-
-  const filters = { showRejected: showRejected || dismissed, dismissed };
-  const [rows, byCountry, run, account] = await Promise.all([
-    listOffers(userId, { ...filters, status, country, sort }),
-    countOffersByCountry(userId, filters),
+  const [rows, facets, run, account] = await Promise.all([
+    listOffers(userId, f),
+    feedFacets(userId, f),
     getReconciledLastRun(userId),
     getUserWithProfile(userId),
   ]);
@@ -54,7 +50,6 @@ export default async function OffersPage({
     hasCv: !!account?.profile?.cvText,
     keywords: account?.profile?.keywords ?? [],
   });
-  const total = byCountry.reduce((sum, c) => sum + c.n, 0);
   // « Nouvelle » = arrivée dans le fil depuis moins de 24 h (donc par la recherche du jour)
   const now = Date.now();
   const isNew = (addedAt: Date) => now - addedAt.getTime() < 24 * 3600_000;
@@ -62,13 +57,27 @@ export default async function OffersPage({
   // Sans note (mode sans clé), trier par note n'a pas de sens : on ne propose pas ce tri
   const sortOptions = SORTS.filter(s => s !== 'score' || mode === 'scored');
 
-  /** Lien qui change UN paramètre en gardant les autres (filtres combinables). */
-  const href = (patch: Record<string, string | undefined>) => {
-    const next = new URLSearchParams();
-    for (const [k, v] of Object.entries({ ...params, ...patch })) if (v) next.set(k, v);
-    const qs = next.toString();
-    return qs ? `/offers?${qs}` : '/offers';
-  };
+  /** Lien qui change UNE famille de filtres en gardant toutes les autres. */
+  const href = (patch: Partial<ParsedFilters>) => filtersHref(f, patch);
+  const without = <T,>(arr: T[] | undefined, v: T) => (arr ?? []).filter(x => x !== v);
+
+  // Pastilles des filtres actifs, chacune avec son lien de retrait
+  const chips: { label: string; href: string }[] = [
+    ...(f.q ? [{ label: `« ${f.q} »`, href: href({ q: undefined }) }] : []),
+    ...(f.statuses ?? []).map(v => ({ label: STATUS_LABELS[v], href: href({ statuses: without(f.statuses, v) }) })),
+    ...(f.countries ?? []).map(v => ({ label: countryLabel(v), href: href({ countries: without(f.countries, v) }) })),
+    ...(f.sources ?? []).map(v => ({ label: SOURCE_LABELS[v] ?? v, href: href({ sources: without(f.sources, v) }) })),
+    ...(f.minScore !== undefined ? [{ label: `Note ≥ ${f.minScore}`, href: href({ minScore: undefined }) }] : []),
+    ...(f.sinceDays ? [{ label: SINCE_LABELS[f.sinceDays], href: href({ sinceDays: undefined }) }] : []),
+    ...(showRejected && !dismissed ? [{ label: 'Écartées incluses', href: href({ showRejected: false }) }] : []),
+  ];
+  const clearAll = filtersHref({ showRejected: false, dismissed, sort });
+
+  /** Valeurs proposées pour une famille : celles présentes dans le fil + celles déjà cochées. */
+  const options = (facet: { value: string; n: number }[], selected: string[] = []) => [
+    ...facet,
+    ...selected.filter(v => !facet.some(x => x.value === v)).map(value => ({ value, n: 0 })),
+  ];
 
   // Ce qui part vers le composant client : des données simples et sérialisables (pas de Date)
   // Erreur : message clair pour l'utilisateur ; le détail technique ne quitte le serveur
@@ -129,35 +138,98 @@ export default async function OffersPage({
           </div>
         </div>
         <nav className="flex gap-2 text-sm">
-          {/* Ces liens changent de vue mais CONSERVENT le tri choisi */}
-          <Link href={href({ status: undefined, rejected: undefined, dismissed: undefined, country: undefined })} className="rounded-md border bg-white px-3 py-1">Toutes</Link>
-          <Link href={href({ status: 'a_traiter', dismissed: undefined })} className="rounded-md border bg-white px-3 py-1">À traiter</Link>
-          <Link href={href({ status: 'postule', dismissed: undefined })} className="rounded-md border bg-white px-3 py-1">Postulées</Link>
-          <Link href={href({ rejected: showRejected ? undefined : '1' })} className="rounded-md border bg-white px-3 py-1">
-            {showRejected ? 'Masquer les écartées' : 'Voir les écartées'}
-          </Link>
-          <Link href={href({ dismissed: dismissed ? undefined : '1', status: undefined })} className="rounded-md border bg-white px-3 py-1">
+          <Link href={filtersHref({ ...f, dismissed: !dismissed, showRejected: false })} className="rounded-md border bg-white px-3 py-1">
             {dismissed ? '← Retour au fil' : 'Corbeille'}
           </Link>
         </nav>
       </div>
 
-      {/* Onglets par pays : affichés dès que les offres couvrent plus d'un pays */}
-      {byCountry.length > 1 && (
-        <nav className="flex flex-wrap gap-2 border-b pb-3 text-sm">
-          <Link href={href({ country: undefined })} className={`rounded-full px-3 py-1 ${!country ? 'bg-gray-900 text-white' : 'border bg-white'}`}>
-            Tous les pays ({total})
-          </Link>
-          {byCountry.map(c => (
-            <Link
-              key={c.country}
-              href={href({ country: c.country })}
-              className={`rounded-full px-3 py-1 ${country === c.country ? 'bg-gray-900 text-white' : 'border bg-white'}`}
-            >
-              {countryLabel(c.country)} ({c.n})
+      {/* Filtres CUMULABLES : un formulaire GET, chaque changement recharge la page avec l'URL à jour.
+          Entre familles = ET (statut ET pays ET source…) ; dans une famille = OU (France OU Luxembourg). */}
+      <details open={nActive > 0} className="rounded-xl border bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+          Filtres{nActive > 0 && ` (${nActive})`}
+        </summary>
+        <AutoSubmitForm className="grid gap-4 border-t px-4 py-4 text-sm md:grid-cols-2 lg:grid-cols-4">
+          {sort !== 'recent' && <input type="hidden" name="sort" value={sort} />}
+          {dismissed && <input type="hidden" name="dismissed" value="1" />}
+
+          <div className="md:col-span-2 lg:col-span-4 flex gap-2">
+            <input
+              type="search" name="q" defaultValue={f.q ?? ''} maxLength={80}
+              placeholder="Rechercher un intitulé ou une entreprise…"
+              className="flex-1 rounded-md border px-3 py-1.5"
+            />
+            <button className="rounded-md bg-gray-900 px-3 py-1.5 font-medium text-white">Rechercher</button>
+          </div>
+
+          <fieldset>
+            <legend className="mb-1 font-medium">Statut</legend>
+            {options(facets.status, f.statuses).map(o => (
+              <label key={o.value} className="flex items-center gap-2 py-0.5">
+                <input type="checkbox" name="status" value={o.value} defaultChecked={f.statuses?.includes(o.value as never)} />
+                {STATUS_LABELS[o.value as keyof typeof STATUS_LABELS] ?? o.value} <span className="text-gray-400">({o.n})</span>
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-1 font-medium">Pays</legend>
+            {options(facets.country, f.countries).map(o => (
+              <label key={o.value} className="flex items-center gap-2 py-0.5">
+                <input type="checkbox" name="country" value={o.value} defaultChecked={f.countries?.includes(o.value)} />
+                {countryLabel(o.value)} <span className="text-gray-400">({o.n})</span>
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset>
+            <legend className="mb-1 font-medium">Source</legend>
+            {options(facets.source, f.sources).map(o => (
+              <label key={o.value} className="flex items-center gap-2 py-0.5">
+                <input type="checkbox" name="source" value={o.value} defaultChecked={f.sources?.includes(o.value)} />
+                {SOURCE_LABELS[o.value] ?? o.value} <span className="text-gray-400">({o.n})</span>
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset className="space-y-2">
+            <legend className="mb-1 font-medium">Autres</legend>
+            {mode === 'scored' && (
+              <label className="block">
+                Note minimale{' '}
+                <select name="min" defaultValue={f.minScore ?? ''} className="ml-1 rounded-md border px-2 py-1">
+                  <option value="">Toutes</option>
+                  {SCORE_OPTIONS.map(v => <option key={v} value={v}>{v} et plus</option>)}
+                </select>
+              </label>
+            )}
+            <label className="block">
+              Ajoutées{' '}
+              <select name="since" defaultValue={f.sinceDays ?? ''} className="ml-1 rounded-md border px-2 py-1">
+                <option value="">Toute période</option>
+                {SINCE_OPTIONS.map(v => <option key={v} value={v}>{SINCE_LABELS[v]}</option>)}
+              </select>
+            </label>
+            {!dismissed && (
+              <label className="flex items-center gap-2">
+                <input type="checkbox" name="rejected" value="1" defaultChecked={showRejected} />
+                Inclure les offres écartées
+              </label>
+            )}
+          </fieldset>
+        </AutoSubmitForm>
+      </details>
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          {chips.map(c => (
+            <Link key={c.label} href={c.href} className="rounded-full bg-gray-900 px-3 py-1 text-white hover:bg-gray-700" title="Retirer ce filtre">
+              {c.label} ×
             </Link>
           ))}
-        </nav>
+          <Link href={clearAll} className="text-gray-500 underline">Tout effacer</Link>
+        </div>
       )}
 
       {/* Tri : de simples liens (?sort=…), la page est recalculée côté serveur */}
@@ -167,7 +239,7 @@ export default async function OffersPage({
           {sortOptions.map(s => (
             <Link
               key={s}
-              href={href({ sort: s === 'recent' ? undefined : s })}
+              href={href({ sort: s })}
               aria-current={sort === s ? 'true' : undefined}
               className={`rounded-full px-3 py-1 ${sort === s ? 'bg-gray-900 text-white' : 'border bg-white'}`}
             >
@@ -179,7 +251,9 @@ export default async function OffersPage({
 
       {rows.length === 0 ? (
         <p className="rounded-xl border bg-white p-6 text-sm text-gray-500">
-          {dismissed
+          {nActive > 0 ? (
+            <>Aucune offre ne correspond à ces filtres. <Link href={clearAll} className="underline">Tout effacer</Link></>
+          ) : dismissed
             ? 'La corbeille est vide.'
             : "Aucune offre pour l'instant. Vérifie ton profil (CV et clé Claude) : la recherche tourne chaque matin à 7h17."}
         </p>

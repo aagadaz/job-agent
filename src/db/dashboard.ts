@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { db } from './client';
 import { users, profiles, companies, offers, userOffers, runs, catalogCompanies } from './schema';
 import { STATUS_LABELS } from '../lib/status';
@@ -142,26 +142,82 @@ export async function deleteCompany(userId: string, companyId: string): Promise<
 }
 
 // ─── Offres ───
-interface OfferFilters { showRejected: boolean; dismissed?: boolean }
-
-/** Conditions communes au fil et à ses compteurs (mêmes règles = mêmes chiffres). */
-function feedConditions(userId: string, opts: OfferFilters) {
-  const conditions = [eq(userOffers.userId, userId)];
-  // Corbeille : seulement les supprimées ; sinon, jamais les supprimées
-  conditions.push(opts.dismissed ? isNotNull(userOffers.dismissedAt) : isNull(userOffers.dismissedAt));
-  if (!opts.showRejected) conditions.push(eq(userOffers.rejected, false));
-  return conditions;
+/** Offres arrivées dans le fil depuis 24 h (retenues, non supprimées) : pastille de la navigation. */
+export async function countNewOffers(userId: string): Promise<number> {
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(userOffers)
+    .where(and(
+      eq(userOffers.userId, userId),
+      eq(userOffers.rejected, false),
+      isNull(userOffers.dismissedAt),
+      gte(userOffers.createdAt, sql`now() - interval '24 hours'`),
+    ));
+  return n;
 }
 
-/** Nombre d'offres par pays pour les onglets du fil ('none' = pays inconnu). */
-export async function countOffersByCountry(userId: string, opts: OfferFilters) {
-  const rows = await db
-    .select({ country: offers.country, n: sql<number>`count(*)::int` })
-    .from(userOffers)
-    .innerJoin(offers, eq(offers.id, userOffers.offerId))
-    .where(and(...feedConditions(userId, opts)))
-    .groupBy(offers.country);
-  return rows.map(r => ({ country: r.country ?? 'none', n: r.n })).sort((a, b) => b.n - a.n);
+// ─── Filtres du fil : tous CUMULABLES (ET entre familles, OU à l'intérieur d'une famille) ───
+export interface FeedFilters {
+  showRejected: boolean;
+  dismissed?: boolean;           // vue Corbeille
+  statuses?: ApplicationStatus[];
+  countries?: string[];          // 'none' = pays non déterminé
+  sources?: string[];
+  minScore?: number;
+  q?: string;                    // recherche dans l'intitulé et l'entreprise
+  sinceDays?: number;            // arrivées dans le fil depuis N jours
+}
+type Facet = 'country' | 'status' | 'source';
+
+/** Échappe %, _ et \ : une recherche « 100% » ne doit pas devenir un joker SQL. */
+const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+
+/**
+ * Conditions du fil. `omit` retire UNE famille : pour compter les valeurs d'un filtre
+ * (« France (12) »), on applique tous les AUTRES filtres mais pas celui-là — sinon, une fois
+ * « France » coché, les autres pays afficheraient 0 et on ne pourrait plus les ajouter.
+ */
+function feedConditions(userId: string, f: FeedFilters, omit?: Facet) {
+  const c = [eq(userOffers.userId, userId)];
+  // Corbeille : seulement les supprimées ; sinon, jamais les supprimées
+  c.push(f.dismissed ? isNotNull(userOffers.dismissedAt) : isNull(userOffers.dismissedAt));
+  if (!f.showRejected) c.push(eq(userOffers.rejected, false));
+  if (omit !== 'status' && f.statuses?.length) c.push(inArray(userOffers.status, f.statuses));
+  if (omit !== 'source' && f.sources?.length) c.push(inArray(offers.source, f.sources));
+  if (omit !== 'country' && f.countries?.length) {
+    const known = f.countries.filter(x => x !== 'none');
+    const parts = [
+      ...(known.length ? [inArray(offers.country, known)] : []),
+      ...(f.countries.includes('none') ? [isNull(offers.country)] : []),
+    ];
+    c.push(parts.length === 1 ? parts[0] : or(...parts)!);
+  }
+  if (f.minScore !== undefined) c.push(gte(userOffers.score, f.minScore)); // les non notées sont exclues
+  if (f.q) {
+    const pattern = likePattern(f.q);
+    c.push(or(ilike(offers.title, pattern), ilike(offers.company, pattern))!);
+  }
+  if (f.sinceDays) c.push(gte(userOffers.createdAt, sql`now() - make_interval(days => ${f.sinceDays})`));
+  return c;
+}
+
+/** Compteurs par valeur pour chaque famille de filtres (« facettes »), cohérents avec le reste. */
+export async function feedFacets(userId: string, f: FeedFilters) {
+  const count = (col: typeof offers.country | typeof offers.source | typeof userOffers.status, omit: Facet) =>
+    db
+      .select({ value: col, n: sql<number>`count(*)::int` })
+      .from(userOffers)
+      .innerJoin(offers, eq(offers.id, userOffers.offerId))
+      .where(and(...feedConditions(userId, f, omit)))
+      .groupBy(col);
+  const [byCountry, byStatus, bySource] = await Promise.all([
+    count(offers.country, 'country'),
+    count(userOffers.status, 'status'),
+    count(offers.source, 'source'),
+  ]);
+  const norm = (rows: { value: string | null; n: number }[]) =>
+    rows.map(r => ({ value: r.value ?? 'none', n: r.n })).sort((a, b) => b.n - a.n);
+  return { country: norm(byCountry), status: norm(byStatus), source: norm(bySource) };
 }
 
 // ─── Tri du fil ───
@@ -190,14 +246,8 @@ function orderFor(sort: OfferSort) {
   }
 }
 
-export async function listOffers(
-  userId: string,
-  opts: OfferFilters & { status?: ApplicationStatus; country?: string; sort?: OfferSort },
-) {
+export async function listOffers(userId: string, opts: FeedFilters & { sort?: OfferSort }) {
   const conditions = feedConditions(userId, opts);
-  // 'none' = offres dont le pays n'a pas pu être déterminé
-  if (opts.country) conditions.push(opts.country === 'none' ? isNull(offers.country) : eq(offers.country, opts.country));
-  if (opts.status) conditions.push(eq(userOffers.status, opts.status));
 
   return db
     .select({

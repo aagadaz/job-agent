@@ -10,10 +10,10 @@ export function CompanyForm() {
   return (
     <form action={formAction} className="space-y-3">
       <div className="flex flex-wrap gap-3">
-        <input name="name" placeholder="Nom de l'entreprise" required className="w-56 rounded-md border px-3 py-2 text-sm" />
+        <input name="name" placeholder="Nom (entreprise ou « HelloWork – data Paris »)" required className="w-56 rounded-md border px-3 py-2 text-sm" />
         <input
           name="careersUrl"
-          placeholder="URL de la page carrières (facultatif, obligatoire pour Workday)"
+          placeholder="URL de la page carrières, ou d’une page de résultats HelloWork / Apec / WTTJ (facultatif)"
           className="min-w-64 flex-1 rounded-md border px-3 py-2 text-sm"
         />
         <button disabled={pending} className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">

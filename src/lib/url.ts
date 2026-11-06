@@ -3,7 +3,12 @@
 // de suivi inconnu ne doit pas faire passer une offre déjà vue pour une nouvelle (= re-notée).
 // Exemple réel : Databricks et Squarepoint publient via Greenhouse sur leur propre site,
 // toutes leurs offres ont la même adresse et ne diffèrent que par ?gh_jid=…
-const IDENTIFYING_PARAMS = new Set(['gh_jid', 'jobid', 'job_id', 'jid', 'jk', 'id', 'oid', 'reqid', 'req_id', 'posting_id']);
+// Taleo (?job=…), SuccessFactors (?career_job_req_id=…) et autres sites carrières lus par la
+// source « Site carrières » : leurs offres ne diffèrent souvent QUE par ce paramètre.
+const IDENTIFYING_PARAMS = new Set([
+  'gh_jid', 'jobid', 'job_id', 'jid', 'jk', 'id', 'oid', 'reqid', 'req_id', 'posting_id',
+  'job', 'career_job_req_id', 'requisitionid', 'jobreqid', 'jobpostingid', 'pid', 'offerid',
+]);
 
 /**
  * Normalise une URL pour qu'une même offre ait toujours la même clé :
