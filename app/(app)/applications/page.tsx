@@ -3,7 +3,8 @@ import { backfillMilestones, getSheetSettings, getWeeklyGoal, importFromFeed, li
 import { computeDashboard } from '@/lib/application-stats';
 import { STAGES, STAGE_KEYS, companyKey, needsFollowUp, RELANCE_DAYS, type Stage } from '@/lib/applications';
 import { requireUserId } from '@/lib/session';
-import { ApplicationRow, type ApplicationView } from '../../components/applications/ApplicationRow';
+import { type ApplicationView } from '../../components/applications/ApplicationRow';
+import { ApplicationsTable } from '../../components/applications/ApplicationsTable';
 import { AddApplicationForm } from '../../components/applications/AddApplicationForm';
 import { AddContactForm, ContactRow, type ContactView } from '../../components/applications/ContactsPanel';
 import { Dashboard } from '../../components/applications/Dashboard';
@@ -108,29 +109,12 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
             </form>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-2 py-2">#</th><th className="px-2">Entreprise</th><th className="px-2">Type d&apos;entreprise</th>
-                  <th className="px-2">Poste (lien)</th><th className="px-2">Type</th><th className="px-2">Réponses</th>
-                  <th className="px-2">Last contact</th><th className="px-2">Notes</th><th />
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((a, i) => (
-                  <ApplicationRow key={a.id} a={a} index={i + 1} contactsHref={`/applications?tab=contacts&company=${encodeURIComponent(a.company)}`} />
-                ))}
-              </tbody>
-            </table>
-            {shown.length === 0 && (
-              <p className="p-6 text-sm text-gray-500">
-                {views.length === 0
-                  ? 'Aucune candidature pour l’instant. Passe une offre en « Postulé » dans ton fil, ou ajoute une candidature faite ailleurs ci-dessus.'
-                  : 'Aucune candidature ne correspond à ces filtres.'}
-              </p>
-            )}
-          </div>
+          <ApplicationsTable
+            rows={shown.map(a => ({ ...a, contactsHref: `/applications?tab=contacts&company=${encodeURIComponent(a.company)}` }))}
+            emptyMessage={views.length === 0
+              ? 'Aucune candidature pour l’instant. Importe ton Google Sheet, passe une offre en « Postulé » dans ton fil, ou ajoute une candidature faite ailleurs.'
+              : 'Aucune candidature ne correspond à ces filtres.'}
+          />
         </>
       ) : (
         <>

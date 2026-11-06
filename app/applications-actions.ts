@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { requireUserId } from '@/lib/session';
 import { COMPANY_TYPES, CONTRACTS, STAGE_KEYS } from '@/lib/applications';
 import {
-  createApplication, createContact, deleteApplication, deleteContact, getSheetSettings, importFromSheet, setWeeklyGoal,
+  createApplication, createContact, deleteApplications, deleteContact, getSheetSettings, importFromSheet, setWeeklyGoal,
   updateApplication, updateContact,
 } from '@/db/applications';
 import { parseSheetGid, parseSheetId, readTrackingRows } from '@/lib/sheets';
@@ -63,10 +63,14 @@ export async function editApplication(id: string, field: string, value: string |
   return ok ? { ok: true, message: '' } : { ok: false, message: 'Candidature introuvable.' };
 }
 
-export async function removeApplication(id: string): Promise<void> {
+/** Suppression d'une ou plusieurs lignes du suivi (bouton de ligne ou sélection multiple). */
+export async function removeApplications(ids: string[]): Promise<ActionResult> {
   const userId = await requireUserId();
-  await deleteApplication(userId, z.string().uuid().parse(id));
+  const parsed = z.array(z.string().uuid()).min(1).max(1000).safeParse(ids);
+  if (!parsed.success) return { ok: false, message: 'Sélection invalide.' };
+  const n = await deleteApplications(userId, [...new Set(parsed.data)]);
   revalidatePath('/applications');
+  return { ok: true, message: `${n} candidature${n > 1 ? 's' : ''} supprimée${n > 1 ? 's' : ''}.` };
 }
 
 export async function addContact(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {

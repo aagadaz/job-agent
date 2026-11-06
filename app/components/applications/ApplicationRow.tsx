@@ -1,7 +1,7 @@
 'use client';
 
-import { useTransition } from 'react';
-import { editApplication, removeApplication } from '../../applications-actions';
+import { useEffect, useState, useTransition } from 'react';
+import { editApplication, removeApplications } from '../../applications-actions';
 import { COMPANY_TYPES, CONTRACTS, STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { EditDate, EditSelect, EditText } from './Editable';
 
@@ -11,12 +11,25 @@ export interface ApplicationView {
   followUp: boolean; contacts: { name: string; role: string }[];
 }
 
-export function ApplicationRow({ a, index, contactsHref }: { a: ApplicationView; index: number; contactsHref?: string }) {
+interface RowProps { a: ApplicationView; index: number; contactsHref?: string; selected: boolean; onToggle: () => void }
+
+export function ApplicationRow({ a, index, contactsHref, selected, onToggle }: RowProps) {
   const [deleting, startDelete] = useTransition();
+  // Suppression en deux temps (sans boîte de dialogue du navigateur) : 1er clic = « Confirmer ? »,
+  // qui disparaît tout seul après 4 s si on ne confirme pas.
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const t = setTimeout(() => setConfirming(false), 4000);
+    return () => clearTimeout(t);
+  }, [confirming]);
   const save = (field: string) => (value: string) => editApplication(a.id, field, field === 'lastContact' ? (value || null) : value);
 
   return (
-    <tr className={`border-t align-top ${a.followUp ? 'bg-amber-50/60' : ''} ${deleting ? 'opacity-40' : ''}`}>
+    <tr className={`border-t align-top ${selected ? 'bg-blue-50/70' : a.followUp ? 'bg-amber-50/60' : ''} ${deleting ? 'opacity-40' : ''}`}>
+      <td className="py-2 pl-3 pr-1">
+        <input type="checkbox" checked={selected} onChange={onToggle} aria-label={`Sélectionner ${a.company}`} className="size-4 accent-gray-900" />
+      </td>
       <td className="px-2 py-2 text-xs text-gray-400">{index}</td>
       <td className="min-w-40 px-1 py-1">
         <EditText value={a.company} save={save('company')} className="font-medium" />
@@ -45,14 +58,31 @@ export function ApplicationRow({ a, index, contactsHref }: { a: ApplicationView;
       </td>
       <td className="px-1 py-1"><EditDate value={a.lastContact} save={save('lastContact')} /></td>
       <td className="min-w-48 px-1 py-1"><EditText value={a.notes} save={save('notes')} placeholder="Notes…" multiline /></td>
-      <td className="px-2 py-2 text-right">
-        <button
-          onClick={() => startDelete(() => removeApplication(a.id))}
-          className="text-xs text-gray-400 hover:text-red-600"
-          title={a.fromAgent ? "Retirer du suivi (l'offre reste dans ton fil)" : 'Supprimer'}
-        >
-          ✕
-        </button>
+      {/* Colonne collée à droite : le bouton reste visible même quand le tableau défile horizontalement */}
+      <td className={`sticky right-0 whitespace-nowrap border-l px-2 py-1.5 text-right ${selected ? 'bg-blue-50' : 'bg-white'}`}>
+        {confirming ? (
+          <span className="inline-flex items-center gap-1">
+            <button
+              onClick={() => { setConfirming(false); startDelete(async () => { await removeApplications([a.id]); }); }}
+              className="rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+            >
+              Supprimer
+            </button>
+            <button onClick={() => setConfirming(false)} className="px-1 text-xs text-gray-500 hover:text-gray-900">Annuler</button>
+          </span>
+        ) : (
+          <button
+            onClick={() => setConfirming(true)}
+            disabled={deleting}
+            className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
+            title={a.fromAgent ? "Supprimer la ligne (l'offre reste dans ton fil)" : 'Supprimer la ligne'}
+            aria-label={`Supprimer la candidature ${a.company}`}
+          >
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+            </svg>
+          </button>
+        )}
       </td>
     </tr>
   );

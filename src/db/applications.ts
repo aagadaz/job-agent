@@ -59,7 +59,7 @@ export async function importFromFeed(userId: string): Promise<number> {
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
     .leftJoin(applications, and(eq(applications.userId, userId), eq(applications.offerId, offers.id)))
-    .where(and(eq(userOffers.userId, userId), ne(userOffers.status, 'a_traiter'), isNull(applications.id)));
+    .where(and(eq(userOffers.userId, userId), ne(userOffers.status, 'a_traiter'), eq(userOffers.untracked, false), isNull(applications.id)));
   if (rows.length === 0) return 0;
   const inserted = await db.insert(applications).values(rows.map(r => {
     const stage = STATUS_TO_STAGE[r.status] ?? 'applied';
@@ -78,6 +78,8 @@ export async function syncFromOfferStatus(userId: string, offerId: string, statu
   if (!stage) return; // « À traiter » : rien à suivre
   const [o] = await db.select().from(offers).where(eq(offers.id, offerId));
   if (!o) return;
+  // Changer le statut est un choix explicite : l'offre revient dans le suivi si elle en avait été retirée
+  await db.update(userOffers).set({ untracked: false }).where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId), eq(userOffers.untracked, true)));
   await db.insert(applications)
     .values({ userId, offerId, company: o.company, title: o.title, url: o.url, origin: 'agent', contract: contractOf(o.employmentType), stage, lastContact: today(), ...initialMilestones(stage, today()) })
     .onConflictDoUpdate({ target: [applications.userId, applications.offerId], set: { stage, lastContact: today(), updatedAt: new Date(), ...milestones(stage) } });
@@ -98,8 +100,24 @@ export async function updateApplication(userId: string, id: string, patch: Parti
   return rows.length === 1;
 }
 
-export async function deleteApplication(userId: string, id: string): Promise<void> {
-  await db.delete(applications).where(and(eq(applications.userId, userId), eq(applications.id, id)));
+/**
+ * Supprime une ou plusieurs candidatures. Pour celles liées à une offre du fil, on pose une
+ * « pierre tombale » (user_offers.untracked) : sans elle, importFromFeed recréerait la ligne au
+ * prochain affichage, puisque l'offre est toujours « Postulé » dans le fil.
+ */
+export async function deleteApplications(userId: string, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  return db.transaction(async tx => {
+    const removed = await tx.delete(applications)
+      .where(and(eq(applications.userId, userId), inArray(applications.id, ids)))
+      .returning({ offerId: applications.offerId });
+    const offerIds = removed.map(r => r.offerId).filter((x): x is string => x !== null);
+    if (offerIds.length) {
+      await tx.update(userOffers).set({ untracked: true })
+        .where(and(eq(userOffers.userId, userId), inArray(userOffers.offerId, offerIds)));
+    }
+    return removed.length;
+  });
 }
 
 // ─── Contacts ───

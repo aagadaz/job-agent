@@ -1,0 +1,1 @@
+ALTER TABLE "user_offers" ADD COLUMN "untracked" boolean DEFAULT false NOT NULL;
