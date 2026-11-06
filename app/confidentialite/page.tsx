@@ -41,6 +41,7 @@ export default function PrivacyPage() {
           <li><b>CV</b> : le <b>texte</b> extrait de ton CV. Le fichier PDF lui-même n&apos;est pas conservé.</li>
           <li><b>Préférences de recherche</b> : mots-clés, zones (pays, villes), filtres, seuil de notation, entreprises suivies.</li>
           <li><b>Clé API Claude</b> : stockée <b>chiffrée</b> (AES-256-GCM) ; elle n&apos;est jamais réaffichée en clair.</li>
+          <li><b>Suivi des candidatures et contacts</b> : les candidatures et les contacts (nom, rôle, coordonnées professionnelles) que tu saisis toi-même. Ils ne sont visibles que par toi et supprimés avec ton compte.</li>
           <li><b>Résultats</b> : les offres trouvées, leur note, ton statut de candidature, et l&apos;identifiant de ton Google Sheet si tu en connectes un.</li>
           <li><b>Historique technique</b> : date et résultat de chaque recherche, messages d&apos;erreur.</li>
         </ul>

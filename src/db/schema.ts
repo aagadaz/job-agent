@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, uuid, text, integer, boolean, timestamp, jsonb,
+  pgTable, pgEnum, uuid, text, integer, boolean, timestamp, jsonb, date,
   primaryKey, unique, index,
 } from 'drizzle-orm/pg-core';
 import type { SearchArea } from '../lib/countries';
@@ -163,3 +163,44 @@ export const loginTokens = pgTable('login_tokens', {
 }, (t) => [
   index('login_tokens_email_created_idx').on(t.email, t.createdAt), // anti-abus : liens récents par e-mail
 ]);
+
+// ─── Suivi des candidatures (onglet « Candidatures ») ───
+// Calqué sur le Google Sheet de suivi : Entreprise · Type d'entreprise · Poste (lien) · Type de
+// contrat · Réponses (étape numérotée) · Last contact · Notes. Une candidature peut venir d'une
+// offre de l'agent (offerId) ou être saisie à la main (recruteur LinkedIn, cooptation…).
+export const applicationStageEnum = pgEnum('application_stage', [
+  'not_started', 'applied', 'in_conversation', 'closed', 'unsuccessful', 'waiting', 'committed',
+]);
+
+export const applications = pgTable('applications', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  offerId: uuid('offer_id').references(() => offers.id, { onDelete: 'set null' }), // null = saisie manuelle
+  company: text('company').notNull(),
+  companyType: text('company_type').notNull().default(''), // AI & tech · Consulting · Financial services · Industry
+  title: text('title').notNull().default(''),
+  url: text('url').notNull().default(''),
+  contract: text('contract').notNull().default('CDI'),
+  stage: applicationStageEnum('stage').notNull().default('applied'),
+  lastContact: date('last_contact'),                        // AAAA-MM-JJ
+  notes: text('notes').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index('applications_user_idx').on(t.userId),
+  unique('applications_user_offer').on(t.userId, t.offerId), // une offre de l'agent = une seule candidature
+]);
+
+// ─── Contacts dans les entreprises (onglet « Contacts ») ───
+// Données personnelles de TIERS : visibles uniquement par l'utilisateur qui les saisit.
+export const contacts = pgTable('contacts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  company: text('company').notNull(),
+  name: text('name').notNull(),
+  role: text('role').notNull().default(''),
+  email: text('email').notNull().default(''),
+  linkedin: text('linkedin').notNull().default(''),
+  notes: text('notes').notNull().default(''), // ex. « Alumni ESEO », « rencontré au salon »
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('contacts_user_idx').on(t.userId)]);

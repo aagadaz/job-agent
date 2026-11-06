@@ -11,6 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const items: NavItem[] = [
     { href: '/offers', label: 'Offres', icon: 'offers', badge: fresh },
+    { href: '/applications', label: 'Candidatures', icon: 'applications' },
     { href: '/companies', label: 'Entreprises', icon: 'companies' },
     { href: '/profile', label: 'Profil', icon: 'profile' },
     // Le lien n'est rendu que pour un admin (la page se protège elle-même de toute façon)

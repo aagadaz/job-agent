@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 // Icônes en SVG inline (pas de bibliothèque) : 4 tracés simples, aucune requête réseau
 const ICONS: Record<string, React.ReactNode> = {
   offers: <path d="M4 7h16M4 12h16M4 17h10" />,
+  applications: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
   companies: <><path d="M3 21h18M5 21V7l7-4 7 4v14" /><path d="M9 21v-4h6v4M9 10h.01M15 10h.01M9 14h.01M15 14h.01" /></>,
   profile: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
   admin: <><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" /><path d="M9 12l2 2 4-4" /></>,

@@ -19,6 +19,7 @@ import { COUNTRY_CODES, type CountryCode } from '@/lib/countries';
 import { readCompanyLines } from '@/lib/csv';
 import { resolveCompany, SUPPORTED_ATS } from '@/sources/ats';
 import { reconcileFeed } from '@/db/repository';
+import { syncFromOfferStatus } from '@/db/applications';
 
 // Une server action est un endpoint HTTP public : on revérifie la session ET on valide
 // chaque champ, même si le formulaire "ne permet pas" de l'envoyer autrement.
@@ -248,7 +249,10 @@ export async function changeStatus(offerId: string, status: string): Promise<Act
 
   // 1) La base fait foi : le statut est enregistré quoi qu'il arrive ensuite
   await setOfferStatus(userId, id, next);
+  // … et l'onglet Candidatures suit (création ou changement d'étape)
+  await syncFromOfferStatus(userId, id, next);
   revalidatePath('/offers');
+  revalidatePath('/applications');
 
   // 2) Le Sheet est une copie de confort : son échec ne doit pas annuler le changement de statut
   const app = await getApplicationForSheet(userId, id);
