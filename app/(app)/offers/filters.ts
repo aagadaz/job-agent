@@ -1,4 +1,5 @@
-import { STATUSES, SORTS, type ApplicationStatus, type FeedFilters, type OfferSort } from '@/db/dashboard';
+import { STATUSES, type ApplicationStatus, type FeedFilters } from '@/db/dashboard';
+import { isDefaultSort, parseSort, serializeSort, type SortSpec } from '@/lib/offer-sort';
 import { COUNTRY_CODES } from '@/lib/countries';
 import { SUPPORTED_ATS } from '@/sources/ats';
 
@@ -18,7 +19,7 @@ function list<T extends string>(raw: string | string[] | undefined, allowed: rea
 }
 const one = (raw: string | string[] | undefined) => (Array.isArray(raw) ? raw[0] : raw);
 
-export interface ParsedFilters extends FeedFilters { sort: OfferSort }
+export interface ParsedFilters extends FeedFilters { sort: SortSpec[] }
 
 export function parseFilters(p: RawParams): ParsedFilters {
   const dismissed = one(p.dismissed) === '1';
@@ -34,7 +35,7 @@ export function parseFilters(p: RawParams): ParsedFilters {
     minScore: (SCORE_OPTIONS as readonly number[]).includes(minScore) ? minScore : undefined,
     sinceDays: (SINCE_OPTIONS as readonly number[]).includes(since) ? since : undefined,
     q: q || undefined,
-    sort: SORTS.find(s => s === one(p.sort)) ?? 'recent',
+    sort: parseSort(one(p.sort)),
   };
 }
 
@@ -56,7 +57,7 @@ export function filtersHref(f: ParsedFilters, patch: Partial<ParsedFilters> = {}
   if (g.q) s.set('q', g.q);
   if (g.dismissed) s.set('dismissed', '1');
   else if (g.showRejected) s.set('rejected', '1');
-  if (g.sort !== 'recent') s.set('sort', g.sort);
+  if (!isDefaultSort(g.sort)) s.set('sort', serializeSort(g.sort));
   const qs = s.toString();
   return qs ? `/offers?${qs}` : '/offers';
 }

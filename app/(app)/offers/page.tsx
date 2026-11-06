@@ -7,7 +7,8 @@ import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
 import { ClosedButton } from '../../components/ClosedButton';
 import { StatusSelect } from '../../components/StatusSelect';
-import { SORTS, SORT_LABELS, feedFacets, getUserWithProfile, listOffers } from '@/db/dashboard';
+import { feedFacets, getUserWithProfile, listOffers } from '@/db/dashboard';
+import { DEFAULT_SORT, DIR_LABELS, SORT_KEYS, SORT_LABELS, cycleSort, isDefaultSort, serializeSort } from '@/lib/offer-sort';
 import { STATUS_LABELS } from '@/lib/status';
 import { AutoSubmitForm } from '../../components/AutoSubmitForm';
 import { SINCE_OPTIONS, SCORE_OPTIONS, activeCount, filtersHref, parseFilters, type ParsedFilters, type RawParams } from './filters';
@@ -55,7 +56,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const isNew = (addedAt: Date) => now - addedAt.getTime() < 24 * 3600_000;
   const newCount = dismissed ? 0 : rows.filter(o => isNew(o.addedAt)).length;
   // Sans note (mode sans clé), trier par note n'a pas de sens : on ne propose pas ce tri
-  const sortOptions = SORTS.filter(s => s !== 'score' || mode === 'scored');
+  const sortOptions = SORT_KEYS.filter(s => s !== 'score' || mode === 'scored');
 
   /** Lien qui change UNE famille de filtres en gardant toutes les autres. */
   const href = (patch: Partial<ParsedFilters>) => filtersHref(f, patch);
@@ -151,7 +152,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
           Filtres{nActive > 0 && ` (${nActive})`}
         </summary>
         <AutoSubmitForm className="grid gap-4 border-t px-4 py-4 text-sm md:grid-cols-2 lg:grid-cols-4">
-          {sort !== 'recent' && <input type="hidden" name="sort" value={sort} />}
+          {!isDefaultSort(sort) && <input type="hidden" name="sort" value={serializeSort(sort)} />}
           {dismissed && <input type="hidden" name="dismissed" value="1" />}
 
           <div className="md:col-span-2 lg:col-span-4 flex gap-2">
@@ -232,20 +233,38 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
         </div>
       )}
 
-      {/* Tri : de simples liens (?sort=…), la page est recalculée côté serveur */}
+      {/* Tri multi-critères : chaque pastille est un lien (?sort=score.desc,posted.asc) ; un clic
+          ajoute le critère en dernier, un 2e clic inverse son sens, un 3e le retire. */}
       {rows.length > 1 && (
         <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="Trier les offres">
           <span className="text-gray-500">Trier par :</span>
-          {sortOptions.map(s => (
-            <Link
-              key={s}
-              href={href({ sort: s })}
-              aria-current={sort === s ? 'true' : undefined}
-              className={`rounded-full px-3 py-1 ${sort === s ? 'bg-gray-900 text-white' : 'border bg-white'}`}
-            >
-              {SORT_LABELS[s]}
-            </Link>
-          ))}
+          {sortOptions.map(key => {
+            const pos = sort.findIndex(s => s.key === key);
+            const spec = pos >= 0 ? sort[pos] : null;
+            const next = cycleSort(sort, key);
+            const action = !spec ? 'ajouter ce critère' : next.some(s => s.key === key) ? 'inverser le sens' : 'retirer ce critère';
+            return (
+              <Link
+                key={key}
+                href={href({ sort: next })}
+                aria-current={spec ? 'true' : undefined}
+                title={`${spec ? `${SORT_LABELS[key]} : ${DIR_LABELS[key][spec.dir]}` : SORT_LABELS[key]} — cliquer pour ${action}`}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 ${spec ? 'bg-gray-900 text-white' : 'border bg-white'}`}
+              >
+                {spec && sort.length > 1 && (
+                  <span className="grid size-4 place-items-center rounded-full bg-white/25 text-[10px] font-semibold" aria-label={`priorité ${pos + 1}`}>{pos + 1}</span>
+                )}
+                {SORT_LABELS[key]}
+                {spec && <span aria-hidden>{spec.dir === 'desc' ? '↓' : '↑'}</span>}
+              </Link>
+            );
+          })}
+          {!isDefaultSort(sort) && (
+            <Link href={href({ sort: DEFAULT_SORT })} className="text-xs text-gray-500 underline hover:text-gray-900">Réinitialiser le tri</Link>
+          )}
+          <span className="w-full text-xs text-gray-400 sm:w-auto">
+            {sort.map(s => `${SORT_LABELS[s.key]} (${DIR_LABELS[s.key][s.dir]})`).join(', puis ')}
+          </span>
         </nav>
       )}
 

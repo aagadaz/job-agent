@@ -3,6 +3,7 @@ import { db } from './client';
 import { users, profiles, companies, offers, userOffers, runs, catalogCompanies } from './schema';
 import { STATUS_LABELS } from '../lib/status';
 import type { SearchArea } from '../lib/countries';
+import { DEFAULT_SORT, type SortSpec } from '../lib/offer-sort';
 
 // Requêtes de l'interface web. Règle d'or : CHAQUE requête filtre par userId,
 // passé par le serveur à partir de la session — jamais par une valeur venant du navigateur.
@@ -220,33 +221,32 @@ export async function feedFacets(userId: string, f: FeedFilters) {
   return { country: norm(byCountry), status: norm(byStatus), source: norm(bySource) };
 }
 
-// ─── Tri du fil ───
-// Liste FERMÉE de tris : la valeur vient de l'URL (?sort=…), on ne l'insère jamais telle quelle
-// dans le SQL, on choisit parmi des ORDER BY écrits à l'avance (liste blanche).
-export const SORTS = ['recent', 'score', 'posted'] as const;
-export type OfferSort = (typeof SORTS)[number];
-export const SORT_LABELS: Record<OfferSort, string> = {
-  recent: 'Plus récentes',
-  score: 'Meilleure note',
-  posted: 'Date de publication',
-};
+// ─── Tri du fil (multi-critères) ───
+// Les critères viennent de l'URL mais ont été validés par liste blanche (parseSort) : chaque clé
+// correspond à une expression SQL écrite ICI, le sens n'est que asc/desc. Rien de l'URL n'est
+// recopié tel quel dans la requête.
 
-function orderFor(sort: OfferSort) {
-  switch (sort) {
-    // Ordre d'arrivée dans TON fil : les offres du dernier passage remontent en haut ;
-    // à arrivée égale (même passage), la meilleure note d'abord.
-    case 'recent':
-      return [desc(userOffers.createdAt), sql`${userOffers.score} desc nulls last`];
-    case 'score':
-      return [sql`${userOffers.score} desc nulls last`, sql`${offers.datePosted} desc nulls last`, desc(userOffers.createdAt)];
-    // Date annoncée par l'employeur, texte ISO (AAAA-MM-JJ) : l'ordre alphabétique = l'ordre chronologique ;
-    // vide quand la source ne la donne pas → en fin de liste (la chaîne vide est la plus « petite »)
-    case 'posted':
-      return [sql`${offers.datePosted} desc nulls last`, desc(userOffers.createdAt)];
+function sortExpr({ key, dir }: SortSpec) {
+  const d = dir === 'asc' ? sql`asc` : sql`desc`;
+  switch (key) {
+    case 'recent': return sql`${userOffers.createdAt} ${d}`;
+    // Sans note (mode sans clé) ou sans date : toujours en fin de liste, quel que soit le sens
+    case 'score': return sql`${userOffers.score} ${d} nulls last`;
+    // Date ISO AAAA-MM-JJ en texte : ordre alphabétique = ordre chronologique ; '' → NULL → en fin
+    case 'posted': return sql`nullif(${offers.datePosted}, '') ${d} nulls last`;
+    case 'company': return sql`lower(${offers.company}) ${d}`;
   }
 }
 
-export async function listOffers(userId: string, opts: FeedFilters & { sort?: OfferSort }) {
+export function orderFor(specs: SortSpec[]) {
+  // Départages finaux, pour un ordre STABLE (sinon deux offres « égales » peuvent s'échanger
+  // d'une page à l'autre) : arrivée dans le fil, puis identifiant.
+  // Départage implicite par la note (ex. offres d'un même passage), sauf si la note est déjà un critère
+  const byScore = specs.some(s => s.key === 'score') ? [] : [sql`${userOffers.score} desc nulls last`];
+  return [...specs.map(sortExpr), ...byScore, desc(userOffers.createdAt), desc(offers.id)];
+}
+
+export async function listOffers(userId: string, opts: FeedFilters & { sort?: SortSpec[] }) {
   const conditions = feedConditions(userId, opts);
 
   return db
@@ -274,7 +274,7 @@ export async function listOffers(userId: string, opts: FeedFilters & { sort?: Of
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
     .where(and(...conditions))
-    .orderBy(...orderFor(opts.sort ?? 'recent'))
+    .orderBy(...orderFor(opts.sort ?? DEFAULT_SORT))
     .limit(300);
 }
 
