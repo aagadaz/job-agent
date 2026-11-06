@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { editApplication, removeApplications } from '../../applications-actions';
-import { COMPANY_TYPES, CONTRACTS, STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
+import { CONTRACTS, STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { EditDate, EditSelect, EditText } from './Editable';
 
 export interface ApplicationView {
@@ -11,9 +11,9 @@ export interface ApplicationView {
   followUp: boolean; contacts: { name: string; role: string }[];
 }
 
-interface RowProps { a: ApplicationView; index: number; contactsHref?: string; selected: boolean; onToggle: () => void }
+interface RowProps { a: ApplicationView; index: number; contactsHref?: string; selected: boolean; onToggle: () => void; categories: string[] }
 
-export function ApplicationRow({ a, index, contactsHref, selected, onToggle }: RowProps) {
+export function ApplicationRow({ a, index, contactsHref, selected, onToggle, categories }: RowProps) {
   const [deleting, startDelete] = useTransition();
   // Suppression en deux temps (sans boîte de dialogue du navigateur) : 1er clic = « Confirmer ? »,
   // qui disparaît tout seul après 4 s si on ne confirme pas.
@@ -40,7 +40,7 @@ export function ApplicationRow({ a, index, contactsHref, selected, onToggle }: R
         )}
       </td>
       <td className="px-1 py-1.5">
-        <EditSelect value={a.companyType} save={save('companyType')} options={[{ value: '', label: '—' }, ...COMPANY_TYPES.map(t => ({ value: t, label: t }))]} />
+        <EditSelect value={a.companyType} save={save('companyType')} options={[{ value: '', label: '— (auto)' }, ...(categories.includes(a.companyType) || !a.companyType ? categories : [...categories, a.companyType]).map(t => ({ value: t, label: t }))]} />
       </td>
       <td className="min-w-48 px-1 py-1">
         <div className="flex items-center gap-1">

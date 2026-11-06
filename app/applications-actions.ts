@@ -1,11 +1,13 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { z } from 'zod';
 import { requireUserId } from '@/lib/session';
-import { COMPANY_TYPES, CONTRACTS, STAGE_KEYS } from '@/lib/applications';
+import { CONTRACTS, STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
+import { classifyInBackground, classifyMissingTypes } from '@/lib/classify-runner';
 import {
-  createApplication, createContact, deleteApplications, deleteContact, getSheetSettings, importFromSheet, setWeeklyGoal,
+  createApplication, createContact, deleteApplications, deleteContact, updateStages, getSheetSettings, importFromSheet, setWeeklyGoal,
   updateApplication, updateContact,
 } from '@/db/applications';
 import { parseSheetGid, parseSheetId, readTrackingRows } from '@/lib/sheets';
@@ -20,7 +22,8 @@ const url = z.string().trim().max(2000).refine(v => v === '' || /^https?:\/\//i.
 
 const ApplicationSchema = z.object({
   company: text(120).min(1, 'Indique l’entreprise.'),
-  companyType: z.enum(['', ...COMPANY_TYPES]),
+  // Texte libre borné : les catégories de base + celles créées par Claude ou importées du Sheet
+  companyType: text(40),
   title: text(200),
   url,
   contract: z.enum(CONTRACTS),
@@ -46,6 +49,8 @@ export async function addApplication(_prev: ActionResult | null, form: FormData)
   const parsed = ApplicationSchema.safeParse(fromForm(form, Object.keys(ApplicationSchema.shape)));
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
   await createApplication(userId, parsed.data as never);
+  // Type laissé vide → Claude le devine APRÈS la réponse (l'utilisateur n'attend pas)
+  if (!parsed.data.companyType) after(() => classifyInBackground(userId));
   revalidatePath('/applications');
   return { ok: true, message: 'Candidature ajoutée.' };
 }
@@ -61,6 +66,20 @@ export async function editApplication(id: string, field: string, value: string |
   const ok = await updateApplication(userId, idOk.data, { [key.data]: parsed.data });
   revalidatePath('/applications');
   return ok ? { ok: true, message: '' } : { ok: false, message: 'Candidature introuvable.' };
+}
+
+/** Changement d'étape de plusieurs lignes d'un coup (sélection dans le tableau). */
+export async function changeStages(ids: string[], stage: string, touchContact: boolean): Promise<ActionResult> {
+  const userId = await requireUserId();
+  const parsed = z.object({
+    ids: z.array(z.string().uuid()).min(1).max(1000),
+    stage: z.enum(STAGE_KEYS as [Stage, ...Stage[]]),
+    touchContact: z.boolean(),
+  }).safeParse({ ids, stage, touchContact });
+  if (!parsed.success) return { ok: false, message: 'Sélection ou étape invalide.' };
+  const n = await updateStages(userId, [...new Set(parsed.data.ids)], parsed.data.stage, parsed.data.touchContact);
+  revalidatePath('/applications');
+  return { ok: true, message: `${n} candidature${n > 1 ? 's' : ''} passée${n > 1 ? 's' : ''} en « ${STAGES[parsed.data.stage].label} ».` };
 }
 
 /** Suppression d'une ou plusieurs lignes du suivi (bouton de ligne ou sélection multiple). */
@@ -118,6 +137,7 @@ export async function importSheet(_prev: ActionResult | null, form: FormData): P
   try {
     const { tab, rows } = await readTrackingRows(sheetId, gid);
     const r = await importFromSheet(userId, rows);
+    if (r.added) after(() => classifyInBackground(userId));
     revalidatePath('/applications');
     const parts = [`${r.added} candidature${r.added > 1 ? 's' : ''} importée${r.added > 1 ? 's' : ''} depuis « ${tab} »`];
     if (r.duplicates) parts.push(`${r.duplicates} déjà présente${r.duplicates > 1 ? 's' : ''}`);
@@ -139,4 +159,28 @@ export async function updateWeeklyGoal(value: string): Promise<ActionResult> {
   await setWeeklyGoal(userId, goal.data);
   revalidatePath('/applications');
   return { ok: true, message: '' };
+}
+
+// ─── Classement automatique des types d'entreprise ───
+
+/** Bouton « Classer avec Claude » : classe tout de suite et renvoie un compte rendu. */
+export async function autoClassify(): Promise<ActionResult> {
+  const userId = await requireUserId();
+  try {
+    const r = await classifyMissingTypes(userId);
+    revalidatePath('/applications');
+    if (r.status === 'no_key') return { ok: false, message: 'Ajoute ta clé Claude dans Profil pour classer automatiquement.' };
+    if (r.status === 'nothing') return { ok: true, message: 'Toutes les entreprises ont déjà un type.' };
+    const more = r.remaining ? ` Il en reste ${r.remaining} : relance.` : '';
+    return { ok: true, message: `${r.classified} candidature${r.classified > 1 ? 's' : ''} classée${r.classified > 1 ? 's' : ''}.${more}` };
+  } catch (err) {
+    console.error('[company-types]', err instanceof Error ? err.message : err);
+    const status = (err as { status?: number }).status;
+    return {
+      ok: false,
+      message: status === 401 ? 'Ta clé Claude est refusée : vérifie-la dans Profil.'
+        : status === 429 ? 'Limite de requêtes Claude atteinte : réessaie dans une minute.'
+        : 'Classement impossible pour le moment. Réessaie plus tard.',
+    };
+  }
 }

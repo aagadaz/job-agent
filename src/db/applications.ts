@@ -2,10 +2,11 @@ import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from './client';
 import { applications, contacts, offers, profiles, userOffers } from './schema';
 import {
-  INTERVIEW_STAGES, RESPONSE_STAGES, STATUS_TO_STAGE, companyKey, companyTypeFrom, contractFrom, parseSheetDate, stageFromLabel, type Stage,
+  INTERVIEW_STAGES, RESPONSE_STAGES, STATUS_TO_STAGE, companyKey, companyTypeFrom, contractFrom, mergeCategories, parseSheetDate, stageFromLabel, type Stage,
 } from '../lib/applications';
 import { fold } from '../lib/text';
 import type { TrackedRow } from '../lib/sheets';
+import type { CompanyToClassify } from '../lib/company-classifier';
 import type { ApplicationStatus } from '../lib/status';
 
 // Requêtes de l'onglet « Candidatures ». Règle d'or inchangée : TOUT est filtré par userId.
@@ -98,6 +99,19 @@ export async function updateApplication(userId: string, id: string, patch: Parti
   const rows = await db.update(applications).set({ ...patch, ...(patch.stage ? milestones(patch.stage) : {}), updatedAt: new Date() })
     .where(and(eq(applications.userId, userId), eq(applications.id, id))).returning({ id: applications.id });
   return rows.length === 1;
+}
+
+/**
+ * Change l'étape de plusieurs candidatures en UNE requête. Les jalons suivent (date d'envoi,
+ * 1re réponse, entretien), et « Last contact » passe à aujourd'hui si demandé.
+ */
+export async function updateStages(userId: string, ids: string[], stage: Stage, touchContact: boolean): Promise<number> {
+  if (ids.length === 0) return 0;
+  const rows = await db.update(applications)
+    .set({ stage, ...milestones(stage), ...(touchContact ? { lastContact: today() } : {}), updatedAt: new Date() })
+    .where(and(eq(applications.userId, userId), inArray(applications.id, ids)))
+    .returning({ id: applications.id });
+  return rows.length;
 }
 
 /**
@@ -243,4 +257,68 @@ export async function backfillMilestones(userId: string): Promise<void> {
 export async function getSheetSettings(userId: string): Promise<{ sheetId: string | null; sheetGid: number | null }> {
   const [p] = await db.select({ sheetId: profiles.sheetId, sheetGid: profiles.sheetGid }).from(profiles).where(eq(profiles.userId, userId));
   return p ?? { sheetId: null, sheetGid: null };
+}
+
+// ─── Types d'entreprise (classement automatique) ───
+
+/** Catégories de l'utilisateur : celles de base + toutes celles déjà utilisées dans son suivi. */
+export async function listCategories(userId: string): Promise<string[]> {
+  const rows = await db.selectDistinct({ t: applications.companyType }).from(applications)
+    .where(and(eq(applications.userId, userId), ne(applications.companyType, '')));
+  return mergeCategories(rows.map(r => r.t).sort((a, b) => a.localeCompare(b, 'fr')));
+}
+
+/**
+ * Entreprises sans type, regroupées par nom normalisé. Avant de solliciter Claude, on recopie
+ * le type d'une autre candidature chez la MÊME entreprise s'il existe (gratuit et cohérent).
+ * Renvoie ce qui reste à classer, avec des indices (postes, domaine du lien).
+ */
+export async function prepareUntyped(userId: string): Promise<CompanyToClassify[]> {
+  const rows = await db.select({ id: applications.id, company: applications.company, companyType: applications.companyType, title: applications.title, url: applications.url })
+    .from(applications).where(eq(applications.userId, userId));
+  const typed = new Map<string, string>();
+  for (const r of rows) if (r.companyType) typed.set(companyKey(r.company), r.companyType);
+
+  const untyped = new Map<string, CompanyToClassify>();
+  const copy = new Map<string, string[]>(); // type connu → ids à remplir
+  for (const r of rows) {
+    if (r.companyType) continue;
+    const key = companyKey(r.company);
+    const known = typed.get(key);
+    if (known) { copy.set(known, [...(copy.get(known) ?? []), r.id]); continue; }
+    const entry = untyped.get(key) ?? { name: r.company, hints: [] };
+    let host = '';
+    try { host = r.url ? new URL(r.url).hostname.replace(/^www\./, '') : ''; } catch {}
+    for (const h of [r.title, host]) if (h && !entry.hints.includes(h)) entry.hints.push(h);
+    untyped.set(key, entry);
+  }
+  for (const [type, ids] of copy) {
+    await db.update(applications).set({ companyType: type })
+      .where(and(eq(applications.userId, userId), inArray(applications.id, ids), eq(applications.companyType, '')));
+  }
+  return [...untyped.values()];
+}
+
+/**
+ * Écrit les catégories trouvées. Ne remplit QUE les cases vides : un type choisi à la main par
+ * l'utilisateur n'est jamais écrasé (même si une classification tardive arrive après son choix).
+ */
+export async function applyCompanyTypes(userId: string, types: Map<string, string>): Promise<number> {
+  if (types.size === 0) return 0;
+  const rows = await db.select({ id: applications.id, company: applications.company }).from(applications)
+    .where(and(eq(applications.userId, userId), eq(applications.companyType, '')));
+  const byKey = new Map([...types].map(([name, t]) => [companyKey(name), t]));
+  const groups = new Map<string, string[]>();
+  for (const r of rows) {
+    const t = byKey.get(companyKey(r.company));
+    if (t) groups.set(t, [...(groups.get(t) ?? []), r.id]);
+  }
+  let n = 0;
+  for (const [type, ids] of groups) {
+    const done = await db.update(applications).set({ companyType: type, updatedAt: new Date() })
+      .where(and(eq(applications.userId, userId), inArray(applications.id, ids), eq(applications.companyType, '')))
+      .returning({ id: applications.id });
+    n += done.length;
+  }
+  return n;
 }

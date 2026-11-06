@@ -60,9 +60,9 @@ function segmentBy(rows: StatRow[], key: (r: StatRow) => string, order?: string[
     const responded = rs.filter(r => r.respondedAt).length;
     return { label, sent: rs.length, responded, interviewed: rs.filter(r => r.interviewed).length, responseRate: pct(responded, rs.length) };
   });
-  return order
-    ? segs.sort((a, b) => (order.indexOf(a.label) + 1 || 99) - (order.indexOf(b.label) + 1 || 99))
-    : segs.sort((a, b) => b.sent - a.sent);
+  // Ordre fixe pour les catégories de base, puis les autres (créées par Claude…) par volume
+  const rank = (l: string) => (order?.includes(l) ? order.indexOf(l) : l === 'Non renseigné' ? 2000 : 1000);
+  return segs.sort((a, b) => rank(a.label) - rank(b.label) || b.sent - a.sent);
 }
 
 export function computeDashboard(all: StatRow[], goal: number, now = new Date()): Dashboard {

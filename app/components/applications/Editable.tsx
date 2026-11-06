@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 
 // Cellules éditables du tableau : on modifie sur place, l'enregistrement part quand on quitte
 // le champ (blur) ou qu'on change une liste. Un liseré rouge signale une valeur refusée.
@@ -22,6 +22,8 @@ const base = 'w-full rounded border border-transparent bg-transparent px-1.5 py-
 export function EditText({ value, save, placeholder, multiline, className = '' }: { value: string; save: Save; placeholder?: string; multiline?: boolean; className?: string }) {
   const { pending, error, run } = useSaver(save);
   const [current, setCurrent] = useState(value);
+  // La valeur peut changer « par ailleurs » (action groupée, classement auto) : on se recale
+  useEffect(() => setCurrent(value), [value]);
   const props = {
     value: current,
     placeholder,
@@ -36,6 +38,7 @@ export function EditText({ value, save, placeholder, multiline, className = '' }
 export function EditSelect({ value, options, save, tone }: { value: string; options: { value: string; label: string }[]; save: Save; tone?: (v: string) => string }) {
   const { pending, error, run } = useSaver(save);
   const [current, setCurrent] = useState(value);
+  useEffect(() => setCurrent(value), [value]);
   return (
     <select
       value={current}
@@ -53,6 +56,7 @@ export function EditDate({ value, save }: { value: string | null; save: Save }) 
   return (
     <input
       type="date"
+      key={value ?? ''} // champ non contrôlé : une nouvelle clé le recrée avec la nouvelle valeur
       defaultValue={value ?? ''}
       onChange={e => run(e.target.value)}
       className={`${base} w-36 ${pending ? 'opacity-60' : ''}`}

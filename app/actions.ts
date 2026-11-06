@@ -2,6 +2,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { revalidatePath } from 'next/cache';
+import { after } from 'next/server';
 import { z } from 'zod';
 import {
   STATUSES, createManualRun, deleteCompany, failRun, addCatalogCompanies, getApplicationForSheet, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
@@ -20,6 +21,7 @@ import { readCompanyLines } from '@/lib/csv';
 import { resolveCompany, SUPPORTED_ATS } from '@/sources/ats';
 import { reconcileFeed } from '@/db/repository';
 import { syncFromOfferStatus } from '@/db/applications';
+import { classifyInBackground } from '@/lib/classify-runner';
 
 // Une server action est un endpoint HTTP public : on revérifie la session ET on valide
 // chaque champ, même si le formulaire "ne permet pas" de l'envoyer autrement.
@@ -251,6 +253,8 @@ export async function changeStatus(offerId: string, status: string): Promise<Act
   await setOfferStatus(userId, id, next);
   // … et l'onglet Candidatures suit (création ou changement d'étape)
   await syncFromOfferStatus(userId, id, next);
+  // Nouvelle candidature sans type d'entreprise → classement par Claude après la réponse
+  after(() => classifyInBackground(userId));
   revalidatePath('/offers');
   revalidatePath('/applications');
 

@@ -2,13 +2,13 @@
 
 import { useActionState, useRef, useEffect } from 'react';
 import { addApplication } from '../../applications-actions';
-import { COMPANY_TYPES, CONTRACTS, STAGES, STAGE_KEYS } from '@/lib/applications';
+import { CONTRACTS, STAGES, STAGE_KEYS } from '@/lib/applications';
 import { ResultMessage } from '../ResultMessage';
 
 const input = 'rounded-md border px-2.5 py-1.5 text-sm';
 
 /** Candidature faite hors de l'agent (recruteur LinkedIn, cooptation, salon…). */
-export function AddApplicationForm() {
+export function AddApplicationForm({ categories }: { categories: string[] }) {
   const [result, action, pending] = useActionState(addApplication, null);
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => { if (result?.ok) form.current?.reset(); }, [result]);
@@ -18,8 +18,8 @@ export function AddApplicationForm() {
     <form ref={form} action={action} className="flex flex-wrap items-end gap-2">
       <input name="company" required placeholder="Entreprise" className={`${input} w-44`} />
       <select name="companyType" defaultValue="" className={input} aria-label="Type d'entreprise">
-        <option value="">Type d&apos;entreprise</option>
-        {COMPANY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        <option value="">Type d&apos;entreprise (auto)</option>
+        {categories.map(t => <option key={t} value={t}>{t}</option>)}
       </select>
       <input name="title" placeholder="Poste" className={`${input} w-48`} />
       <input name="url" type="url" placeholder="Lien de l'annonce (facultatif)" className={`${input} w-56`} />

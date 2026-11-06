@@ -1,5 +1,7 @@
 import Link from 'next/link';
-import { backfillMilestones, getSheetSettings, getWeeklyGoal, importFromFeed, listApplications, listContacts } from '@/db/applications';
+import { after } from 'next/server';
+import { backfillMilestones, getSheetSettings, getWeeklyGoal, importFromFeed, listApplications, listCategories, listContacts } from '@/db/applications';
+import { classifyInBackground } from '@/lib/classify-runner';
 import { computeDashboard } from '@/lib/application-stats';
 import { STAGES, STAGE_KEYS, companyKey, needsFollowUp, RELANCE_DAYS, type Stage } from '@/lib/applications';
 import { requireUserId } from '@/lib/session';
@@ -18,9 +20,11 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
   const tab = p.tab === 'contacts' ? 'contacts' : 'applications';
 
   // Les offres du fil déjà marquées « Postulé »… rejoignent le suivi (idempotent)
-  await importFromFeed(userId);
+  // Nouvelles lignes venues du fil → leur type d'entreprise est deviné après l'affichage
+  if (await importFromFeed(userId)) after(() => classifyInBackground(userId));
   await backfillMilestones(userId);
-  const [apps, contacts, goal, sheet] = await Promise.all([listApplications(userId), listContacts(userId), getWeeklyGoal(userId), getSheetSettings(userId)]);
+  const [apps, contacts, goal, sheet, categories] = await Promise.all([listApplications(userId), listContacts(userId), getWeeklyGoal(userId), getSheetSettings(userId), listCategories(userId)]);
+  const untyped = apps.filter(a => !a.companyType).length;
   const dashboard = computeDashboard(apps.map(a => ({ ...a, stage: a.stage as Stage })), goal);
 
   // Rapprochement entreprise ↔ contacts, par nom normalisé
@@ -84,7 +88,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
             </Link>
           )}
 
-          {views.length > 0 && <Dashboard d={dashboard} />}
+          {views.length > 0 && <Dashboard d={dashboard} untyped={untyped} />}
 
           <div className="grid gap-3 lg:grid-cols-2">
             <details className="rounded-xl border bg-white p-4" open={views.length === 0}>
@@ -93,7 +97,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
             </details>
             <details className="rounded-xl border bg-white p-4" open={views.length === 0}>
               <summary className="cursor-pointer text-sm font-medium">Ajouter une candidature faite ailleurs</summary>
-              <div className="mt-3"><AddApplicationForm /></div>
+              <div className="mt-3"><AddApplicationForm categories={categories} /></div>
             </details>
           </div>
 
@@ -110,6 +114,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
           </div>
 
           <ApplicationsTable
+            categories={categories}
             rows={shown.map(a => ({ ...a, contactsHref: `/applications?tab=contacts&company=${encodeURIComponent(a.company)}` }))}
             emptyMessage={views.length === 0
               ? 'Aucune candidature pour l’instant. Importe ton Google Sheet, passe une offre en « Postulé » dans ton fil, ou ajoute une candidature faite ailleurs.'

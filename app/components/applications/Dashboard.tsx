@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { Dashboard as Data, Segment, TodoItem } from '@/lib/application-stats';
+import { ClassifyButton } from './ClassifyButton';
 import { GoalInput } from './GoalInput';
 
 // Tableau de bord du suivi : composant SERVEUR (aucun JavaScript envoyé pour les graphiques).
@@ -86,11 +87,12 @@ function Weekly({ weeks, goal }: { weeks: Data['weeks']; goal: number }) {
   );
 }
 
-function SegmentTable({ title, rows }: { title: string; rows: Segment[] }) {
+function SegmentTable({ title, rows, action }: { title: string; rows: Segment[]; action?: React.ReactNode }) {
   const max = Math.max(...rows.map(r => r.sent), 1);
   return (
     <div>
       <h3 className="mb-2 text-sm font-medium">{title}</h3>
+      {action}
       {rows.length === 0 ? <p className="text-sm text-gray-500">—</p> : (
         <table className="w-full text-sm">
           <thead className="text-xs text-gray-500">
@@ -139,7 +141,7 @@ function Todo({ title, items, empty, hint }: { title: string; items: TodoItem[];
 
 const ago = (i: TodoItem) => (i.days === 0 ? 'aujourd’hui' : `il y a ${i.days} j`);
 
-export function Dashboard({ d }: { d: Data }) {
+export function Dashboard({ d, untyped }: { d: Data; untyped: number }) {
   const progress = Math.min(100, Math.round((d.thisWeek / Math.max(d.goal, 1)) * 100));
   return (
     <div className="space-y-4">
@@ -167,7 +169,7 @@ export function Dashboard({ d }: { d: Data }) {
       </div>
 
       <section className={`${card} grid gap-5 md:grid-cols-3`}>
-        {d.segments.map(s => <SegmentTable key={s.title} title={s.title} rows={s.rows} />)}
+        {d.segments.map((s, i) => <SegmentTable key={s.title} title={s.title} rows={s.rows} action={i === 0 ? <ClassifyButton untyped={untyped} /> : undefined} />)}
       </section>
 
       <section className={`${card} grid gap-5 md:grid-cols-3`}>

@@ -71,15 +71,28 @@ export function stageFromLabel(label: string): Stage | null {
   return null;
 }
 
-/** Type d'entreprise saisi librement → valeur de la liste si on la reconnaît, sinon vide. */
-export function companyTypeFrom(raw: string): (typeof COMPANY_TYPES)[number] | '' {
+/**
+ * Type d'entreprise lu dans le Sheet → catégorie de base si c'est un synonyme évident, sinon la
+ * valeur telle quelle (c'est une catégorie de l'utilisateur : « Luxe », « Santé »…). Vide = à
+ * classer par Claude.
+ */
+export function companyTypeFrom(raw: string): string {
   const t = fold(raw).trim();
   if (!t) return '';
-  if (/\b(ai|ia|tech|software|logiciel|startup|saas)\b/.test(t)) return 'AI & tech';
-  if (/consult|esn|conseil/.test(t)) return 'Consulting';
-  if (/financ|bank|banque|assurance|insurance/.test(t)) return 'Financial services';
-  if (/indus|manufactur|energ|auto|aero/.test(t)) return 'Industry';
-  return '';
+  const exact = COMPANY_TYPES.find(c => fold(c) === t);
+  if (exact) return exact;
+  if (/^(ai|ia|tech|software|logiciel|saas|startup tech)$/.test(t)) return 'AI & tech';
+  if (/^(consulting|conseil|esn|cabinet de conseil)$/.test(t)) return 'Consulting';
+  if (/^(finance|banque|bank|assurance|insurance|fintech)$/.test(t)) return 'Financial services';
+  if (/^(industrie|industry|industriel)$/.test(t)) return 'Industry';
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 40);
+}
+
+/** Catégories proposées : celles de base, puis celles déjà utilisées (créées par Claude ou importées). */
+export function mergeCategories(used: readonly string[]): string[] {
+  const out: string[] = [...COMPANY_TYPES];
+  for (const u of used) if (u && !out.some(c => fold(c) === fold(u))) out.push(u);
+  return out;
 }
 
 /** Contrat saisi librement → valeur de la liste (CDI par défaut). */
