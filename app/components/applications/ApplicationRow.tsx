@@ -7,7 +7,9 @@ import { EditDate, EditSelect, EditText } from './Editable';
 
 export interface ApplicationView {
   id: string; company: string; companyType: string; title: string; url: string; contract: string;
-  stage: Stage; lastContact: string | null; notes: string; fromAgent: boolean;
+  stage: Stage; lastContact: string | null; notes: string;
+  offerId: string | null; // candidature venue du fil : lien vers la fiche de l'offre (et sa lettre)
+  hasLetter: boolean;
   followUp: boolean; contacts: { name: string; role: string }[];
 }
 
@@ -48,6 +50,11 @@ export function ApplicationRow({ a, index, contactsHref, selected, onToggle, cat
           <EditText value={a.title} save={save('title')} placeholder="Poste" />
           {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-gray-400 hover:text-gray-700" title="Ouvrir l'annonce">↗</a>}
         </div>
+        {a.offerId && (
+          <a href={`/offers/${a.offerId}`} className="text-xs text-blue-700 hover:underline" title="Fiche de l'offre : analyse, description et lettre de motivation">
+            {a.hasLetter ? 'Lettre rédigée · fiche de l’offre' : 'Fiche de l’offre'}
+          </a>
+        )}
         {!a.url && <EditText value="" save={save('url')} placeholder="Coller le lien de l'annonce…" className="text-xs text-gray-500" />}
       </td>
       <td className="px-1 py-1.5">
@@ -76,7 +83,7 @@ export function ApplicationRow({ a, index, contactsHref, selected, onToggle, cat
             onClick={() => setConfirming(true)}
             disabled={deleting}
             className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
-            title={a.fromAgent ? "Supprimer la ligne (l'offre reste dans ton fil)" : 'Supprimer la ligne'}
+            title={a.offerId ? 'Supprimer la ligne (l’offre redevient « À traiter » dans ton fil)' : 'Supprimer la ligne'}
             aria-label={`Supprimer la candidature ${a.company}`}
           >
             <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

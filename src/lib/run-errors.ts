@@ -3,6 +3,7 @@
 // Module pur, sans dépendance : testable et utilisable partout.
 
 const RULES: { test: RegExp; message: string }[] = [
+  { test: /mots-clés non déduits/i, message: "Claude n'a pas pu déduire de mots-clés de ton CV : indique-les dans Profil." },
   { test: /profil incomplet/i, message: 'Ton profil est incomplet : ajoute au moins un mot-clé dans Profil (ou ton CV et une clé Claude).' },
   { test: /authentication_error|invalid x-api-key|\b401\b/i, message: 'Ta clé Claude a été refusée. Vérifie-la ou remplace-la dans Profil.' },
   { test: /credit balance|billing|\b402\b/i, message: 'Ton crédit Claude est épuisé : recharge-le sur console.anthropic.com, puis relance la recherche.' },

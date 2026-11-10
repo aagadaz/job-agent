@@ -1,4 +1,5 @@
-import { STATUSES, type ApplicationStatus, type FeedFilters } from '@/db/dashboard';
+import type { FeedFilters } from '@/db/dashboard';
+import { FEED_STATUSES, type FeedStatus } from '@/lib/status';
 import { isDefaultSort, parseSort, serializeSort, type SortSpec } from '@/lib/offer-sort';
 import { COUNTRY_CODES } from '@/lib/countries';
 import { SUPPORTED_ATS } from '@/sources/ats';
@@ -19,7 +20,7 @@ function list<T extends string>(raw: string | string[] | undefined, allowed: rea
 }
 const one = (raw: string | string[] | undefined) => (Array.isArray(raw) ? raw[0] : raw);
 
-export interface ParsedFilters extends FeedFilters { sort: SortSpec[] }
+export interface ParsedFilters extends FeedFilters { sort: SortSpec[]; page: number }
 
 export function parseFilters(p: RawParams): ParsedFilters {
   const dismissed = one(p.dismissed) === '1';
@@ -29,13 +30,15 @@ export function parseFilters(p: RawParams): ParsedFilters {
   return {
     dismissed,
     showRejected: one(p.rejected) === '1' || dismissed,
-    statuses: list<ApplicationStatus>(p.status, STATUSES),
+    statuses: list<FeedStatus>(p.status, FEED_STATUSES),
     countries: list(p.country, [...COUNTRY_CODES, 'none']),
     sources: list(p.source, SOURCES),
     minScore: (SCORE_OPTIONS as readonly number[]).includes(minScore) ? minScore : undefined,
     sinceDays: (SINCE_OPTIONS as readonly number[]).includes(since) ? since : undefined,
     q: q || undefined,
     sort: parseSort(one(p.sort)),
+    // Page du fil (1 par défaut). Bornée : une valeur absurde ne doit pas devenir un OFFSET énorme.
+    page: Math.min(Math.max(Math.trunc(Number(one(p.page))) || 1, 1), 1000),
   };
 }
 
@@ -45,9 +48,12 @@ export function activeCount(f: ParsedFilters): number {
     + (f.minScore !== undefined ? 1 : 0) + (f.sinceDays ? 1 : 0) + (f.q ? 1 : 0) + (f.showRejected && !f.dismissed ? 1 : 0);
 }
 
-/** Sérialise des filtres en URL ; `patch` remplace des familles entières (undefined = retirer). */
-export function filtersHref(f: ParsedFilters, patch: Partial<ParsedFilters> = {}): string {
-  const g = { ...f, ...patch };
+/**
+ * Sérialise des filtres en URL ; `patch` remplace des familles entières (undefined = retirer).
+ * Changer un filtre ou le tri ramène à la page 1 (sauf si le patch fixe lui-même la page).
+ */
+export function filtersHref(f: Partial<ParsedFilters> & { sort: SortSpec[] }, patch: Partial<ParsedFilters> = {}): string {
+  const g = { ...f, page: 1, ...patch };
   const s = new URLSearchParams();
   for (const v of g.statuses ?? []) s.append('status', v);
   for (const v of g.countries ?? []) s.append('country', v);
@@ -58,6 +64,7 @@ export function filtersHref(f: ParsedFilters, patch: Partial<ParsedFilters> = {}
   if (g.dismissed) s.set('dismissed', '1');
   else if (g.showRejected) s.set('rejected', '1');
   if (!isDefaultSort(g.sort)) s.set('sort', serializeSort(g.sort));
+  if (g.page && g.page > 1) s.set('page', String(g.page));
   const qs = s.toString();
   return qs ? `/offers?${qs}` : '/offers';
 }

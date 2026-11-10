@@ -1,20 +1,18 @@
 import { and, desc, eq, gte, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { db } from './client';
-import { users, profiles, companies, offers, userOffers, runs, catalogCompanies } from './schema';
-import { STATUS_LABELS } from '../lib/status';
+import { users, profiles, companies, offers, userOffers, runs, catalogCompanies, applications } from './schema';
+import type { FeedStatus } from '../lib/status';
+import { noApplication } from './feed-status';
 import type { SearchArea } from '../lib/countries';
 import { DEFAULT_SORT, type SortSpec } from '../lib/offer-sort';
 
 // Requêtes de l'interface web. Règle d'or : CHAQUE requête filtre par userId,
 // passé par le serveur à partir de la session — jamais par une valeur venant du navigateur.
 
-export type ApplicationStatus = (typeof userOffers.status.enumValues)[number];
-export const STATUSES = userOffers.status.enumValues;
-
-// Vérification À LA COMPILATION : chaque statut de l'enum SQL a un libellé dans status.ts.
-// Ajouter un statut au schéma sans libellé ferait échouer `npm run typecheck`.
-const _everyStatusHasALabel: Record<ApplicationStatus, string> = STATUS_LABELS;
-void _everyStatusHasALabel;
+// Statut d'une offre dans le fil = étape de la candidature liée, ou « à traiter » s'il n'y en a
+// pas (cf. lib/status.ts). Toute requête du fil fait donc une jointure GAUCHE sur applications.
+const applicationOfOffer = and(eq(applications.userId, userOffers.userId), eq(applications.offerId, userOffers.offerId));
+const feedStatus = sql<FeedStatus>`coalesce(${applications.stage}::text, 'a_traiter')`;
 
 // ─── Comptes ───
 /**
@@ -161,7 +159,7 @@ export async function countNewOffers(userId: string): Promise<number> {
 export interface FeedFilters {
   showRejected: boolean;
   dismissed?: boolean;           // vue Corbeille
-  statuses?: ApplicationStatus[];
+  statuses?: FeedStatus[];
   countries?: string[];          // 'none' = pays non déterminé
   sources?: string[];
   minScore?: number;
@@ -183,7 +181,7 @@ function feedConditions(userId: string, f: FeedFilters, omit?: Facet) {
   // Corbeille : seulement les supprimées ; sinon, jamais les supprimées
   c.push(f.dismissed ? isNotNull(userOffers.dismissedAt) : isNull(userOffers.dismissedAt));
   if (!f.showRejected) c.push(eq(userOffers.rejected, false));
-  if (omit !== 'status' && f.statuses?.length) c.push(inArray(userOffers.status, f.statuses));
+  if (omit !== 'status' && f.statuses?.length) c.push(inArray(feedStatus, f.statuses));
   if (omit !== 'source' && f.sources?.length) c.push(inArray(offers.source, f.sources));
   if (omit !== 'country' && f.countries?.length) {
     const known = f.countries.filter(x => x !== 'none');
@@ -204,16 +202,17 @@ function feedConditions(userId: string, f: FeedFilters, omit?: Facet) {
 
 /** Compteurs par valeur pour chaque famille de filtres (« facettes »), cohérents avec le reste. */
 export async function feedFacets(userId: string, f: FeedFilters) {
-  const count = (col: typeof offers.country | typeof offers.source | typeof userOffers.status, omit: Facet) =>
+  const count = (col: typeof offers.country | typeof offers.source | typeof feedStatus, omit: Facet) =>
     db
       .select({ value: col, n: sql<number>`count(*)::int` })
       .from(userOffers)
       .innerJoin(offers, eq(offers.id, userOffers.offerId))
+      .leftJoin(applications, applicationOfOffer)
       .where(and(...feedConditions(userId, f, omit)))
       .groupBy(col);
   const [byCountry, byStatus, bySource] = await Promise.all([
     count(offers.country, 'country'),
-    count(userOffers.status, 'status'),
+    count(feedStatus, 'status'),
     count(offers.source, 'source'),
   ]);
   const norm = (rows: { value: string | null; n: number }[]) =>
@@ -246,7 +245,21 @@ export function orderFor(specs: SortSpec[]) {
   return [...specs.map(sortExpr), ...byScore, desc(userOffers.createdAt), desc(offers.id)];
 }
 
-export async function listOffers(userId: string, opts: FeedFilters & { sort?: SortSpec[] }) {
+/** Taille d'une page du fil. */
+export const PAGE_SIZE = 50;
+
+/** Nombre total d'offres qui correspondent aux filtres (pour la pagination). */
+export async function countOffers(userId: string, f: FeedFilters): Promise<number> {
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(userOffers)
+    .innerJoin(offers, eq(offers.id, userOffers.offerId))
+    .leftJoin(applications, applicationOfOffer)
+    .where(and(...feedConditions(userId, f)));
+  return n;
+}
+
+export async function listOffers(userId: string, opts: FeedFilters & { sort?: SortSpec[]; page?: number }) {
   const conditions = feedConditions(userId, opts);
 
   return db
@@ -264,7 +277,7 @@ export async function listOffers(userId: string, opts: FeedFilters & { sort?: So
       justification: userOffers.justification,
       strengths: userOffers.strengths,
       missingSkills: userOffers.missingSkills,
-      status: userOffers.status,
+      status: feedStatus,
       rejected: userOffers.rejected,
       rejectReason: userOffers.rejectReason,
       requiredYears: userOffers.requiredYears,
@@ -273,24 +286,22 @@ export async function listOffers(userId: string, opts: FeedFilters & { sort?: So
     })
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
+    .leftJoin(applications, applicationOfOffer)
     .where(and(...conditions))
     .orderBy(...orderFor(opts.sort ?? DEFAULT_SORT))
-    .limit(300);
+    .limit(PAGE_SIZE)
+    .offset(((opts.page ?? 1) - 1) * PAGE_SIZE);
 }
 
-/** Masque (dismissed = true) ou restaure une offre du fil — seulement les siennes. */
-export async function setOfferDismissed(userId: string, offerId: string, dismissed: boolean): Promise<void> {
-  await db
+/** Masque (dismissed = true) ou restaure des offres du fil — seulement les siennes. */
+export async function setOffersDismissed(userId: string, offerIds: string[], dismissed: boolean): Promise<number> {
+  if (offerIds.length === 0) return 0;
+  const rows = await db
     .update(userOffers)
     .set({ dismissedAt: dismissed ? new Date() : null })
-    .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
-}
-
-export async function setOfferStatus(userId: string, offerId: string, status: ApplicationStatus): Promise<void> {
-  await db
-    .update(userOffers)
-    .set({ status })
-    .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
+    .where(and(eq(userOffers.userId, userId), inArray(userOffers.offerId, offerIds)))
+    .returning({ offerId: userOffers.offerId });
+  return rows.length;
 }
 
 /** Une offre complète, seulement si elle appartient à CET utilisateur (sinon undefined). */
@@ -314,13 +325,14 @@ export async function getOfferDetail(userId: string, offerId: string) {
       justification: userOffers.justification,
       strengths: userOffers.strengths,
       missingSkills: userOffers.missingSkills,
-      status: userOffers.status,
+      status: feedStatus,
       dismissedAt: userOffers.dismissedAt,
       closedAt: offers.closedAt,
       coverLetter: userOffers.coverLetter,
     })
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
+    .leftJoin(applications, applicationOfOffer)
     .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
   return row;
 }
@@ -355,7 +367,7 @@ export async function setOfferClosed(userId: string, offerId: string, closed: bo
       .set(closed ? { rejected: true, rejectReason: 'expired' } : { rejected: false, rejectReason: null })
       .where(and(
         eq(userOffers.offerId, offerId),
-        eq(userOffers.status, 'a_traiter'),
+        noApplication,
         isNull(userOffers.dismissedAt),
         closed
           ? and(isNull(userOffers.rejectReason), eq(userOffers.rejected, false)) // seulement les offres retenues
@@ -363,27 +375,6 @@ export async function setOfferClosed(userId: string, offerId: string, closed: bo
       ));
     return true;
   });
-}
-
-/** Ce qu'il faut pour écrire la ligne du Sheet — toujours filtré par userId. */
-export async function getApplicationForSheet(userId: string, offerId: string) {
-  const [row] = await db
-    .select({
-      sheetId: profiles.sheetId,
-      sheetGid: profiles.sheetGid,
-      employmentType: offers.employmentType,
-      company: offers.company,
-      title: offers.title,
-      location: offers.location,
-      url: offers.url,
-      source: offers.source,
-      score: userOffers.score,
-    })
-    .from(userOffers)
-    .innerJoin(offers, eq(offers.id, userOffers.offerId))
-    .innerJoin(profiles, eq(profiles.userId, userOffers.userId))
-    .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId)));
-  return row;
 }
 
 // ─── Dernière exécution du worker ───

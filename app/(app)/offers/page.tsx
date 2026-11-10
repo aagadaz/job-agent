@@ -7,9 +7,10 @@ import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
 import { ClosedButton } from '../../components/ClosedButton';
 import { StatusSelect } from '../../components/StatusSelect';
-import { feedFacets, getUserWithProfile, listOffers } from '@/db/dashboard';
+import { PAGE_SIZE, countOffers, feedFacets, getUserWithProfile, listOffers } from '@/db/dashboard';
 import { DEFAULT_SORT, DIR_LABELS, SORT_KEYS, SORT_LABELS, cycleSort, isDefaultSort, serializeSort } from '@/lib/offer-sort';
-import { STATUS_LABELS } from '@/lib/status';
+import { FEED_STATUS_LABELS } from '@/lib/status';
+import { BULK_FORM_ID, BulkOffersBar } from '../../components/BulkOffersBar';
 import { AutoSubmitForm } from '../../components/AutoSubmitForm';
 import { SINCE_OPTIONS, SCORE_OPTIONS, activeCount, filtersHref, parseFilters, type ParsedFilters, type RawParams } from './filters';
 import { searchMode } from '@/lib/search-mode';
@@ -40,8 +41,9 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const dismissed = !!f.dismissed; // vue « Corbeille »
   const nActive = activeCount(f);
 
-  const [rows, facets, run, account] = await Promise.all([
+  const [rows, total, facets, run, account] = await Promise.all([
     listOffers(userId, f),
+    countOffers(userId, f),
     feedFacets(userId, f),
     getReconciledLastRun(userId),
     getUserWithProfile(userId),
@@ -57,6 +59,8 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const newCount = dismissed ? 0 : rows.filter(o => isNew(o.addedAt)).length;
   // Sans note (mode sans clé), trier par note n'a pas de sens : on ne propose pas ce tri
   const sortOptions = SORT_KEYS.filter(s => s !== 'score' || mode === 'scored');
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const firstShown = (f.page - 1) * PAGE_SIZE + 1;
 
   /** Lien qui change UNE famille de filtres en gardant toutes les autres. */
   const href = (patch: Partial<ParsedFilters>) => filtersHref(f, patch);
@@ -65,7 +69,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   // Pastilles des filtres actifs, chacune avec son lien de retrait
   const chips: { label: string; href: string }[] = [
     ...(f.q ? [{ label: `« ${f.q} »`, href: href({ q: undefined }) }] : []),
-    ...(f.statuses ?? []).map(v => ({ label: STATUS_LABELS[v], href: href({ statuses: without(f.statuses, v) }) })),
+    ...(f.statuses ?? []).map(v => ({ label: FEED_STATUS_LABELS[v], href: href({ statuses: without(f.statuses, v) }) })),
     ...(f.countries ?? []).map(v => ({ label: countryLabel(v), href: href({ countries: without(f.countries, v) }) })),
     ...(f.sources ?? []).map(v => ({ label: SOURCE_LABELS[v] ?? v, href: href({ sources: without(f.sources, v) }) })),
     ...(f.minScore !== undefined ? [{ label: `Note ≥ ${f.minScore}`, href: href({ minScore: undefined }) }] : []),
@@ -115,7 +119,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">
-            {dismissed ? 'Corbeille' : 'Offres'} ({rows.length})
+            {dismissed ? 'Corbeille' : 'Offres'} ({total})
             {newCount > 0 && (
               <span className="ml-2 rounded-full bg-blue-600 px-2 py-0.5 align-middle text-xs font-medium text-white">
                 {newCount} nouvelle{newCount > 1 ? 's' : ''}
@@ -169,7 +173,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
             {options(facets.status, f.statuses).map(o => (
               <label key={o.value} className="flex items-center gap-2 py-0.5">
                 <input type="checkbox" name="status" value={o.value} defaultChecked={f.statuses?.includes(o.value as never)} />
-                {STATUS_LABELS[o.value as keyof typeof STATUS_LABELS] ?? o.value} <span className="text-gray-400">({o.n})</span>
+                {FEED_STATUS_LABELS[o.value as keyof typeof FEED_STATUS_LABELS] ?? o.value} <span className="text-gray-400">({o.n})</span>
               </label>
             ))}
           </fieldset>
@@ -235,7 +239,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
 
       {/* Tri multi-critères : chaque pastille est un lien (?sort=score.desc,posted.asc) ; un clic
           ajoute le critère en dernier, un 2e clic inverse son sens, un 3e le retire. */}
-      {rows.length > 1 && (
+      {total > 1 && (
         <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="Trier les offres">
           <span className="text-gray-500">Trier par :</span>
           {sortOptions.map(key => {
@@ -277,10 +281,16 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
             : "Aucune offre pour l'instant. Vérifie ton profil (CV et clé Claude) : la recherche tourne chaque matin à 7h17."}
         </p>
       ) : (
+        <>
+        <BulkOffersBar dismissed={dismissed} />
         <ul className="space-y-3">
           {rows.map(o => (
             <li key={o.offerId} className={`rounded-xl border bg-white p-4 ${o.rejected ? 'opacity-60' : ''}`}>
               <div className="flex flex-wrap items-start gap-3">
+                <input
+                  type="checkbox" name="ids" value={o.offerId} form={BULK_FORM_ID}
+                  aria-label={`Sélectionner ${o.title}`} className="mt-1.5 size-4 accent-gray-900"
+                />
                 <ScoreBadge score={o.score} />
                 <div className="min-w-0 flex-1">
                   {/* Le titre ouvre la fiche complète ; ↗ ouvre directement l'annonce d'origine */}
@@ -336,6 +346,19 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
             </li>
           ))}
         </ul>
+        {pages > 1 && (
+          <nav className="flex flex-wrap items-center justify-between gap-2 text-sm" aria-label="Pages du fil">
+            <span className="text-gray-500">
+              Offres {firstShown} à {firstShown + rows.length - 1} sur {total}
+            </span>
+            <span className="flex items-center gap-2">
+              {f.page > 1 && <Link href={href({ page: f.page - 1 })} className="rounded-md border bg-white px-3 py-1">← Précédentes</Link>}
+              <span className="text-gray-500">Page {f.page} / {pages}</span>
+              {f.page < pages && <Link href={href({ page: f.page + 1 })} className="rounded-md border bg-white px-3 py-1">Suivantes →</Link>}
+            </span>
+          </nav>
+        )}
+        </>
       )}
     </div>
   );

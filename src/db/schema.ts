@@ -12,9 +12,6 @@ export const atsEnum = pgEnum('ats', [
   'greenhouse', 'lever', 'ashby', 'smartrecruiters', 'workday', 'workable', 'recruitee', 'personio', 'teamtailor', 'website',
 ]);
 export const verdictEnum = pgEnum('verdict', ['postuler', 'a_etudier', 'ignorer']);
-export const statusEnum = pgEnum('application_status', [
-  'a_traiter', 'postule', 'entretien', 'refuse', 'abandonne',
-]);
 export const runStatusEnum = pgEnum('run_status', ['running', 'success', 'error']);
 
 // ─── Utilisateurs ───
@@ -114,9 +111,8 @@ export const userOffers = pgTable('user_offers', {
   rejectReason: text('reject_reason').$type<RejectReason>(),
   requiredYears: integer('required_years'), // années d'expérience exigées, si le texte le dit
   coverLetter: text('cover_letter'), // brouillon de lettre de motivation (généré puis éditable)
-  // Retirée du suivi des candidatures par l'utilisateur : ne pas la réimporter automatiquement
-  untracked: boolean('untracked').notNull().default(false),
-  status: statusEnum('status').notNull().default('a_traiter'),
+  // Pas de colonne « statut » : il se lit dans applications (étape de la candidature liée),
+  // « à traiter » = aucune candidature. Cf. src/lib/status.ts.
   // Suppression LOGIQUE : la ligne reste (le worker sait que l'offre est déjà vue et ne la
   // re-note pas), elle est seulement masquée du fil. null = visible.
   dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
@@ -124,6 +120,7 @@ export const userOffers = pgTable('user_offers', {
 }, (t) => [
   primaryKey({ columns: [t.userId, t.offerId] }), // une ligne par (utilisateur, offre), pas plus
   index('user_offers_user_score_idx').on(t.userId, t.score), // pour le tableau trié par score
+  index('user_offers_user_created_idx').on(t.userId, t.createdAt), // tri « récentes », filtre « ajoutées depuis »
 ]);
 
 // ─── Historique des exécutions du worker ───

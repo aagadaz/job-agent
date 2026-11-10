@@ -30,13 +30,16 @@ export default async function ProfilePage() {
             keywords: profile?.keywords.join(', ') ?? '',
             // Profil antérieur aux zones : on convertit l'ancienne ville en zone France
             areas: profile?.areas.length ? profile.areas : [{ country: 'fr', city: profile?.location ?? 'Paris' }],
-            includeTerms: profile?.includeTerms.join(', ') ?? 'data, machine learning, ml, ia, ai, llm, nlp, mlops',
+            // Valeurs par défaut NEUTRES : la plateforme sert à tous les métiers. Seul le filtre de
+            // séniorité a du sens pour tout le monde (et reste modifiable).
+            includeTerms: profile?.includeTerms.join(', ') ?? '',
             excludeTerms: profile?.excludeTerms.join(', ') ?? 'senior, lead, principal, staff, head of, director',
             rejectThreshold: profile?.rejectThreshold ?? 35,
             // undefined (pas encore de profil) → défaut 5 ; null (choisi) → pas de limite
             maxExperienceYears: profile === null || profile === undefined ? 5 : profile.maxExperienceYears,
             useAdzuna: profile?.useAdzuna ?? true,
-            cvChars: profile?.cvText?.length ?? 0,
+            cvText: profile?.cvText ?? '',
+            hasKey: !!row?.user.anthropicKeyEncrypted,
           }}
         />
       </section>
@@ -52,7 +55,7 @@ export default async function ProfilePage() {
       <section className="h-fit rounded-xl border bg-white p-6 lg:col-start-2">
         <h2 className="mb-1 text-lg font-semibold">Google Sheet des candidatures</h2>
         <p className="mb-4 text-sm text-gray-600">
-          Quand tu passes une offre en « Postulé », une ligne est ajoutée ; les statuts suivants la mettent à jour.
+          Chaque candidature envoyée y est ajoutée, et chaque changement d’étape (depuis le fil ou l’onglet Candidatures) y est reporté, avec le vocabulaire de ton Sheet.
         </p>
         <SheetForm
           currentUrl={profile?.sheetId ? `https://docs.google.com/spreadsheets/d/${profile.sheetId}/edit${profile.sheetGid !== null ? `#gid=${profile.sheetGid}` : ''}` : ''}
