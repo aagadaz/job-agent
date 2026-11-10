@@ -6,7 +6,7 @@ export interface RunSnapshot {
   status: 'running' | 'success' | 'error';
   error: string | null;    // message POUR L'UTILISATEUR (déjà traduit côté serveur)
   details?: string | null; // erreur technique brute : seulement pour les administrateurs
-  stats: { fetched?: number; new?: number; kept?: number; rejected?: number; unscored?: number; tooSenior?: number; expired?: number } | null;
+  stats: { fetched?: number; new?: number; kept?: number; rejected?: number; unscored?: number; tooSenior?: number; expired?: number; scoreFailed?: number } | null;
 }
 
 export interface RunSummary {
@@ -20,10 +20,14 @@ const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : 
 
 export function summarizeRun(run: RunSnapshot): RunSummary {
   const summary = baseSummary(run);
-  // Complément : offres retirées du fil car disparues des sources (probablement pourvues)
-  const expired = run.status === 'success' ? run.stats?.expired ?? 0 : 0;
-  if (expired === 0) return summary;
-  return { ...summary, text: `${summary.text} ${plural(expired, 'offre probablement fermée a été retirée', 'offres probablement fermées ont été retirées')} du fil.` };
+  if (run.status !== 'success') return summary;
+  let text = summary.text;
+  // Compléments : offres dont la notation a échoué (retentées), offres disparues des sources
+  const failed = run.stats?.scoreFailed ?? 0;
+  if (failed > 0) text += ` ${plural(failed, "offre n'a pas pu être notée", "offres n'ont pas pu être notées")} : nouvel essai à la prochaine recherche.`;
+  const expired = run.stats?.expired ?? 0;
+  if (expired > 0) text += ` ${plural(expired, 'offre probablement fermée a été retirée', 'offres probablement fermées ont été retirées')} du fil.`;
+  return { ...summary, text };
 }
 
 function baseSummary(run: RunSnapshot): RunSummary {
@@ -44,6 +48,10 @@ function baseSummary(run: RunSnapshot): RunSummary {
   }
   if (run.stats?.unscored) {
     return { tone: 'success', text: `${plural(fresh, 'nouvelle offre ajoutée', 'nouvelles offres ajoutées')} (non notées : ajoute une clé Claude dans Profil pour les noter).` };
+  }
+  // Toutes les nouvelles offres ont échoué à la notation : le complément ci-dessus l'explique
+  if (kept === 0 && rejected === 0 && (run.stats?.scoreFailed ?? 0) > 0) {
+    return { tone: 'info', text: 'Aucune nouvelle offre notée.' };
   }
   if (kept === 0) {
     return { tone: 'info', text: `${plural(fresh, 'nouvelle offre', 'nouvelles offres')}, ${fresh > 1 ? 'toutes écartées' : 'écartée'} (note sous ton seuil ou trop d'expérience exigée).` };

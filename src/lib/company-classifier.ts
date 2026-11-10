@@ -12,7 +12,7 @@ import { fold } from './text';
 // Puis on la nettoie côté serveur, car un modèle peut toujours renvoyer autre chose que
 // ce qu'on attend (casse différente, catégorie inventée trop longue, entreprise inconnue…).
 
-const MODEL = process.env.CLAUDE_MODEL ?? 'claude-haiku-4-5-20251001';
+const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 export const MAX_COMPANIES_PER_CALL = 40;
 export const MAX_CATEGORY_LENGTH = 40;
 const MAX_NEW_PER_CALL = 4; // garde-fou contre l'éparpillement en micro-catégories

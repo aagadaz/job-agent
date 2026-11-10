@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { JobDetail, OfferScore, ScoredOffer } from './types';
 
-const MODEL = process.env.CLAUDE_MODEL ?? 'claude-haiku-4-5-20251001';
+// Haiku 5.5 : 10 fois moins cher que Haiku 4.5 (0,10 $ / 0,50 $ par million de tokens).
+// L'appel d'outil est forcé : le modèle ne « réfléchit » pas avant, max_tokens reste suffisant.
+const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const CONCURRENCY = 3;
 const MAX_OFFER_CHARS = 6_000;
 
@@ -49,6 +51,23 @@ function formatOffer(offer: JobDetail): string {
   ].join('\n').slice(0, MAX_OFFER_CHARS);
 }
 
+/**
+ * Erreur qui touche TOUTES les offres (clé refusée, crédit épuisé) : inutile de continuer,
+ * l'utilisateur doit agir. À distinguer d'un échec ponctuel sur une offre.
+ */
+export class FatalScoringError extends Error {}
+
+function fatalReason(err: unknown): string | null {
+  if (err instanceof Anthropic.AuthenticationError) return 'Clé Claude refusée (401) : vérifie-la dans Profil';
+  if (err instanceof Anthropic.PermissionDeniedError) return "Clé Claude sans droit d'accès au modèle (403)";
+  if (err instanceof Anthropic.APIError && /credit balance/i.test(err.message)) return 'Crédit Claude épuisé sur la clé';
+  return null;
+}
+
+/**
+ * Note une offre. Renvoie null si la notation a échoué pour CETTE offre (elle sera retentée
+ * à la prochaine exécution) ; lève FatalScoringError si l'échec concerne toutes les offres.
+ */
 export async function scoreOffer(client: Anthropic, cvText: string, offer: JobDetail): Promise<OfferScore | null> {
   try {
     const message = await client.messages.create({
@@ -60,6 +79,10 @@ export async function scoreOffer(client: Anthropic, cvText: string, offer: JobDe
       messages: [{ role: 'user', content: `<cv>\n${cvText}\n</cv>\n\n<offre>\n${formatOffer(offer)}\n</offre>` }],
     });
 
+    if (message.stop_reason === 'refusal') {
+      console.error(`  ⚠️ Notation refusée par Claude pour "${offer.title}"`);
+      return null;
+    }
     const toolUse = message.content.find(b => b.type === 'tool_use');
     if (!toolUse) return null;
 
@@ -73,6 +96,8 @@ export async function scoreOffer(client: Anthropic, cvText: string, offer: JobDe
       missingSkills: Array.isArray(raw.missingSkills) ? raw.missingSkills : [],
     };
   } catch (err) {
+    const fatal = fatalReason(err);
+    if (fatal) throw new FatalScoringError(fatal);
     console.error(`  ⚠️ Scoring échoué pour "${offer.title}" :`, (err as Error).message);
     return null;
   }
@@ -81,11 +106,18 @@ export async function scoreOffer(client: Anthropic, cvText: string, offer: JobDe
 export async function scoreOffers(client: Anthropic, cvText: string, offers: JobDetail[]): Promise<ScoredOffer[]> {
   const results: ScoredOffer[] = new Array(offers.length);
   let next = 0;
+  let aborted = false; // erreur fatale : les autres workers s'arrêtent au lieu de tout retenter
 
   async function worker() {
-    while (next < offers.length) {
+    while (next < offers.length && !aborted) {
       const i = next++;
-      const scoring = await scoreOffer(client, cvText, offers[i]);
+      let scoring: OfferScore | null;
+      try {
+        scoring = await scoreOffer(client, cvText, offers[i]);
+      } catch (err) {
+        aborted = true;
+        throw err;
+      }
       results[i] = { ...offers[i], scoring };
       const label = scoring ? `${scoring.score}/100 (${scoring.verdict})` : 'non noté';
       console.log(`  🎯 [${i + 1}/${offers.length}] ${offers[i].title} — ${label}`);
