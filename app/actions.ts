@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { z } from 'zod';
 import {
-  STATUSES, createManualRun, deleteCompany, failRun, addCatalogCompanies, getApplicationForSheet, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOfferDismissed, setOfferStatus,
+  createManualRun, deleteCompany, failRun, addCatalogCompanies, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOffersDismissed,
 } from '@/db/dashboard';
 import { decrypt, encrypt, maskSecret } from '@/lib/crypto';
 import { generateCoverLetter } from '@/lib/cover-letter';
@@ -14,13 +14,15 @@ import { requireUserId } from '@/lib/session';
 import { NO_SEARCH_MESSAGE, searchMode } from '@/lib/search-mode';
 import { dispatchSearch, isGithubConfigured } from '@/lib/github';
 import { getReconciledLastRun } from '@/lib/run-status';
-import { checkTrackingTab, parseSheetGid, parseSheetId, syncApplication } from '@/lib/sheets';
+import { checkTrackingTab, parseSheetGid, parseSheetId } from '@/lib/sheets';
+import { pushManyToSheet, pushToSheet } from '@/lib/sheet-sync';
+import { STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { mapPool } from '@/lib/concurrency';
 import { COUNTRY_CODES, type CountryCode } from '@/lib/countries';
 import { readCompanyLines } from '@/lib/csv';
 import { resolveCompany, SUPPORTED_ATS } from '@/sources/ats';
 import { reconcileFeed } from '@/db/repository';
-import { syncFromOfferStatus } from '@/db/applications';
+import { setOfferStage } from '@/db/applications';
 import { classifyInBackground } from '@/lib/classify-runner';
 
 // Une server action est un endpoint HTTP public : on revérifie la session ET on valide
@@ -233,7 +235,7 @@ export async function removeCompany(companyId: string): Promise<void> {
 
 export async function dismissOffer(offerId: string, dismissed: boolean): Promise<void> {
   const userId = await requireUserId();
-  await setOfferDismissed(userId, z.string().uuid().parse(offerId), z.boolean().parse(dismissed));
+  await setOffersDismissed(userId, [z.string().uuid().parse(offerId)], z.boolean().parse(dismissed));
   revalidatePath('/offers');
 }
 
@@ -244,37 +246,63 @@ export async function reportClosed(offerId: string, closed: boolean): Promise<vo
   revalidatePath('/offers');
 }
 
-export async function changeStatus(offerId: string, status: string): Promise<ActionResult> {
+const StageSchema = z.enum(STAGE_KEYS as [Stage, ...Stage[]]);
+
+/**
+ * Statut choisi dans le fil = étape de la candidature liée (créée si besoin). L'onglet
+ * Candidatures et le Sheet lisent la même valeur : il n'y a qu'une source de vérité.
+ */
+export async function changeStatus(offerId: string, stage: string): Promise<ActionResult> {
   const userId = await requireUserId();
   const id = z.string().uuid().parse(offerId);
-  const next = z.enum(STATUSES).parse(status);
+  const next = StageSchema.parse(stage);
 
-  // 1) La base fait foi : le statut est enregistré quoi qu'il arrive ensuite
-  await setOfferStatus(userId, id, next);
-  // … et l'onglet Candidatures suit (création ou changement d'étape)
-  await syncFromOfferStatus(userId, id, next);
+  // 1) La base fait foi : l'étape est enregistrée quoi qu'il arrive ensuite
+  const applicationId = await setOfferStage(userId, id, next);
+  if (!applicationId) return { ok: false, message: 'Offre introuvable.' };
   // Nouvelle candidature sans type d'entreprise → classement par Claude après la réponse
   after(() => classifyInBackground(userId));
   revalidatePath('/offers');
   revalidatePath('/applications');
 
-  // 2) Le Sheet est une copie de confort : son échec ne doit pas annuler le changement de statut
-  const app = await getApplicationForSheet(userId, id);
-  if (!app?.sheetId) return { ok: true, message: '' };
-  try {
-    const result = await syncApplication(app.sheetId, app.sheetGid, next, app);
-    return { ok: true, message: result === 'appended' ? 'Ajoutée au Sheet' : result === 'updated' ? 'Sheet mis à jour' : '' };
-  } catch (err) {
-    console.error('Synchro Sheet :', err);
-    // Nos propres messages « actionnables » (partage manquant, fichier Excel) sont montrés tels quels ;
-    // toute autre erreur (HTTP, réseau, jeton) reste dans les logs.
-    const raw = (err as Error).message;
-    const actionable = /^(Sheet inaccessible|Ce fichier est un Excel|Onglet)/.test(raw);
-    return {
-      ok: false,
-      message: `Statut enregistré, mais pas dans le Sheet : ${actionable ? raw : 'réessaie plus tard (problème temporaire avec Google).'}`,
-    };
+  // 2) Le Sheet est une copie de confort : son échec ne doit pas annuler le changement
+  return pushToSheet(userId, applicationId);
+}
+
+/**
+ * Action groupée sur les offres cochées dans le fil : les écarter, les restaurer, ou leur
+ * donner une étape. Le Sheet suit en arrière-plan (une écriture par offre, ça peut être long).
+ */
+export async function bulkOffers(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
+  const userId = await requireUserId();
+  const parsed = z.object({
+    ids: z.array(z.string().uuid()).min(1, 'Coche au moins une offre.').max(200),
+    op: z.union([z.enum(['dismiss', 'restore']), StageSchema]),
+  }).safeParse({ ids: form.getAll('ids').map(String), op: String(form.get('op') ?? '') });
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+  const ids = [...new Set(parsed.data.ids)];
+  const { op } = parsed.data;
+  const plural = (n: number) => (n > 1 ? 's' : '');
+
+  if (op === 'dismiss' || op === 'restore') {
+    const n = await setOffersDismissed(userId, ids, op === 'dismiss');
+    revalidatePath('/offers');
+    return { ok: true, message: `${n} offre${plural(n)} ${op === 'dismiss' ? `mise${plural(n)} à la corbeille` : `restaurée${plural(n)}`}.` };
   }
+
+  const applicationIds: string[] = [];
+  for (const id of ids) {
+    const appId = await setOfferStage(userId, id, op);
+    if (appId) applicationIds.push(appId);
+  }
+  after(async () => {
+    await pushManyToSheet(userId, applicationIds);
+    await classifyInBackground(userId);
+  });
+  revalidatePath('/offers');
+  revalidatePath('/applications');
+  const n = applicationIds.length;
+  return { ok: true, message: `${n} offre${plural(n)} passée${plural(n)} en « ${STAGES[op].label} ».` };
 }
 
 export async function updateSheet(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
@@ -294,7 +322,7 @@ export async function updateSheet(_prev: ActionResult | null, form: FormData): P
   // qu'on alimentera, dans son format. Sans gid → onglet « Candidatures » géré par l'application.
   const gid = parseSheetGid(raw);
 
-  // On vérifie l'accès MAINTENANT (et la lisibilité de l'onglet), plutôt qu'au premier « Postulé »
+  // On vérifie l'accès MAINTENANT (et la lisibilité de l'onglet), plutôt qu'à la première candidature envoyée
   let tab: string;
   try {
     tab = await checkTrackingTab(sheetId, gid);

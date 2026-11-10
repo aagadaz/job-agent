@@ -1,5 +1,5 @@
 import { getAccessToken, serviceAccountEmail } from './google-auth';
-import { APPLIED_STATUSES, STATUS_LABELS, type ApplicationStatus } from './status';
+import type { Stage } from './applications';
 import { fold } from './text';
 
 // Suivi des candidatures dans le Google Sheet de chaque utilisateur, via l'API REST Sheets v4.
@@ -25,6 +25,7 @@ export interface ApplicationRow {
   url: string;
   source: string;
   employmentType?: string;
+  contract?: string; // contrat déjà connu (candidature) : prime sur employmentType
 }
 
 /** Extrait l'identifiant d'un Sheet depuis son URL (ou accepte l'identifiant brut). */
@@ -99,7 +100,7 @@ interface Layout {
   headerRow: number;                       // index 0 de la ligne d'en-tête
   cols: Partial<Record<Field, number>>;    // champ → index de colonne
   linkInTitle: boolean;                    // pas de colonne URL : le lien est posé sur l'intitulé
-  statusLabel: (s: ApplicationStatus) => string;
+  statusLabel: (s: Stage) => string;
   formatDate: (d: Date) => string;
   dateIsLastContact: boolean;              // « Last contact » : mise à jour à chaque changement de statut
 }
@@ -108,13 +109,24 @@ const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet'
 
 // Vocabulaire « pipeline » numéroté (1. Not started, 2. Applied…) : on reprend les libellés
 // existants de la colonne quand on les trouve, sinon ces valeurs par défaut.
-const PIPELINE: Record<ApplicationStatus, { n: string; fallback: string }> = {
-  a_traiter: { n: '1', fallback: '1. Not started' },
-  postule: { n: '2', fallback: '2. Applied' },
-  entretien: { n: '3', fallback: '3. In conversation' },
-  abandonne: { n: '4', fallback: '4. Closed' },
-  refuse: { n: '5', fallback: '5. Unsuccessful' },
+// Le Sheet garde SON vocabulaire (souvent une liste déroulante) : on n'y écrit jamais les
+// libellés de l'interface.
+const PIPELINE: Record<Stage, { n: string; fallback: string }> = {
+  not_started: { n: '1', fallback: '1. Not started' },
+  applied: { n: '2', fallback: '2. Applied' },
+  in_conversation: { n: '3', fallback: '3. In conversation' },
+  closed: { n: '4', fallback: '4. Closed' },
+  unsuccessful: { n: '5', fallback: '5. Unsuccessful' },
+  waiting: { n: '6', fallback: '6. Waiting for response' },
+  committed: { n: '7', fallback: '7. Committed' },
 };
+// Vocabulaire simple (non numéroté) : celui qu'écrivait l'application avant les étapes
+const PLAIN: Record<Stage, string> = {
+  not_started: 'À traiter', applied: 'Postulé', in_conversation: 'Entretien', closed: 'Abandonné',
+  unsuccessful: 'Refusé', waiting: 'En attente', committed: 'Accepté',
+};
+/** Étapes qui signifient « j'ai candidaté » : elles créent la ligne dans le Sheet si elle manque. */
+const APPEND_STAGES: readonly Stage[] = ['applied', 'in_conversation', 'unsuccessful', 'waiting', 'committed'];
 
 function detectLayout(tab: string, sheetGid: number, rows: string[][]): Layout | null {
   for (let r = 0; r < Math.min(rows.length, HEADER_SCAN_ROWS); r++) {
@@ -129,8 +141,8 @@ function detectLayout(tab: string, sheetGid: number, rows: string[][]): Layout |
     const below = rows.slice(r + 1);
     const statusValues = below.map(row => row[cols.status!] ?? '').filter(Boolean);
     const pipeline = statusValues.some(v => /^\d\.\s/.test(v));
-    const statusLabel = (s: ApplicationStatus) => {
-      if (!pipeline) return STATUS_LABELS[s];
+    const statusLabel = (s: Stage) => {
+      if (!pipeline) return PLAIN[s];
       const { n, fallback } = PIPELINE[s];
       return statusValues.find(v => v.startsWith(`${n}.`)) ?? fallback;
     };
@@ -240,7 +252,7 @@ async function findRow(spreadsheetId: string, layout: Layout, url: string): Prom
 export async function syncApplication(
   spreadsheetId: string,
   gid: number | null,
-  status: ApplicationStatus,
+  status: Stage,
   row: ApplicationRow,
 ): Promise<'updated' | 'appended' | 'skipped'> {
   if (gid === null) await ensureApplicationsTab(spreadsheetId);
@@ -255,7 +267,7 @@ export async function syncApplication(
     await sheetsFetch(`${spreadsheetId}/values:batchUpdate`, { method: 'POST', body: { valueInputOption: 'RAW', data } });
     return 'updated';
   }
-  if (!APPLIED_STATUSES.includes(status)) return 'skipped';
+  if (!APPEND_STAGES.includes(status)) return 'skipped';
 
   // Construction de la ligne, colonne par colonne, selon l'en-tête reconnu
   const width = Math.max(...Object.values(cols).map(i => i ?? 0)) + 1;
@@ -269,7 +281,7 @@ export async function syncApplication(
   put('url', row.url);
   put('source', row.source);
   put('score', row.score);
-  put('contract', contractOf(row.employmentType));
+  put('contract', row.contract ?? contractOf(row.employmentType));
 
   // Ligne cible = juste après la dernière ligne remplie (repérée sur la colonne Entreprise).
   // On recopie d'abord le FORMAT et la VALIDATION (listes déroulantes) de la ligne du dessus,

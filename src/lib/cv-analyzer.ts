@@ -2,7 +2,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import fs from 'fs';
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
-const DEFAULT_KEYWORDS = ['data scientist', 'machine learning engineer', 'AI engineer'];
 
 /**
  * Extrait le texte d'un PDF déjà en mémoire (upload depuis l'interface).
@@ -58,9 +57,9 @@ export async function deriveKeywords(client: Anthropic, cvText: string): Promise
 
   const toolUse = message.content.find(block => block.type === 'tool_use');
   const keywords = (toolUse?.input as { keywords?: unknown } | undefined)?.keywords;
-  if (!Array.isArray(keywords) || keywords.length === 0) {
-    console.warn('⚠️ Mots-clés non déduits du CV, valeurs par défaut utilisées');
-    return DEFAULT_KEYWORDS;
-  }
-  return keywords.filter((k): k is string => typeof k === 'string').slice(0, 5);
+  const list = Array.isArray(keywords) ? keywords.filter((k): k is string => typeof k === 'string' && k.trim() !== '').slice(0, 5) : [];
+  // Pas de mots-clés « par défaut » : la plateforme sert à tous les métiers, des valeurs
+  // inventées ramèneraient des offres hors sujet. Mieux vaut une erreur claire.
+  if (list.length === 0) throw new Error('Mots-clés non déduits du CV : indique-les dans Profil');
+  return list;
 }

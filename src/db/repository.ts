@@ -5,6 +5,7 @@ import type { JobDetail, ScoredOffer } from '../lib/types';
 import { normalizeUrl } from '../lib/url';
 import { requiredYears, tooMuchExperience } from '../lib/experience';
 import type { RejectReason } from './schema';
+import { noApplication } from './feed-status';
 
 // Toutes les requêtes SQL du worker sont ici : le reste du code ne parle jamais SQL.
 
@@ -195,7 +196,7 @@ export async function reconcileFeed(userId: string, maxYears: number | null, dis
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
     .where(and(
       eq(userOffers.userId, userId),
-      eq(userOffers.status, 'a_traiter'),
+      noApplication, // offres sans candidature : on ne touche pas à celles où l'utilisateur a agi
       isNull(userOffers.dismissedAt),
       or(
         // retenues… (rejected = false : les offres écartées par la note AVANT l'ajout de

@@ -2,9 +2,15 @@
 
 import { useState, useTransition } from 'react';
 import { changeStatus } from '../actions';
-import { STATUS_LABELS } from '@/lib/status';
+import { STAGES, STAGE_KEYS } from '@/lib/applications';
+import type { FeedStatus } from '@/lib/status';
 
-export function StatusSelect({ offerId, status }: { offerId: string; status: string }) {
+/**
+ * Statut d'une offre = étape de sa candidature. « À traiter » n'est proposé que tant qu'aucune
+ * candidature n'existe : pour revenir en arrière, on supprime la candidature (onglet
+ * Candidatures), ce qui évite d'effacer ses notes par un simple changement de liste.
+ */
+export function StatusSelect({ offerId, status }: { offerId: string; status: FeedStatus }) {
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -13,6 +19,7 @@ export function StatusSelect({ offerId, status }: { offerId: string; status: str
       <select
         defaultValue={status}
         disabled={pending}
+        aria-label="Statut de la candidature"
         onChange={e => {
           const next = e.target.value;
           startTransition(async () => {
@@ -21,8 +28,9 @@ export function StatusSelect({ offerId, status }: { offerId: string; status: str
         }}
         className="rounded-md border px-2 py-1 text-sm disabled:opacity-50"
       >
-        {Object.entries(STATUS_LABELS).map(([value, label]) => (
-          <option key={value} value={value}>{label}</option>
+        {status === 'a_traiter' && <option value="a_traiter" disabled>À traiter</option>}
+        {STAGE_KEYS.map(s => (
+          <option key={s} value={s}>{STAGES[s].label}</option>
         ))}
       </select>
       {feedback?.message && (

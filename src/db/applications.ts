@@ -1,13 +1,12 @@
-import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, ne, sql } from 'drizzle-orm';
 import { db } from './client';
 import { applications, contacts, offers, profiles, userOffers } from './schema';
 import {
-  INTERVIEW_STAGES, RESPONSE_STAGES, STATUS_TO_STAGE, companyKey, companyTypeFrom, contractFrom, mergeCategories, parseSheetDate, stageFromLabel, type Stage,
+  INTERVIEW_STAGES, RESPONSE_STAGES, companyKey, companyTypeFrom, contractFrom, mergeCategories, parseSheetDate, stageFromLabel, type Stage,
 } from '../lib/applications';
 import { fold } from '../lib/text';
 import type { TrackedRow } from '../lib/sheets';
 import type { CompanyToClassify } from '../lib/company-classifier';
-import type { ApplicationStatus } from '../lib/status';
 
 // Requêtes de l'onglet « Candidatures ». Règle d'or inchangée : TOUT est filtré par userId.
 
@@ -45,45 +44,58 @@ function initialMilestones(stage: Stage, date: string | null) {
 }
 
 export async function listApplications(userId: string) {
-  return db.select().from(applications).where(eq(applications.userId, userId))
+  return db
+    .select({
+      ...getTableColumns(applications),
+      // Lettre rédigée pour l'offre liée : on l'indique dans le suivi (lien vers la fiche)
+      hasLetter: sql<boolean>`coalesce(${userOffers.coverLetter} <> '', false)`,
+    })
+    .from(applications)
+    .leftJoin(userOffers, and(eq(userOffers.userId, applications.userId), eq(userOffers.offerId, applications.offerId)))
+    .where(eq(applications.userId, userId))
     .orderBy(sql`${applications.lastContact} desc nulls last`, desc(applications.createdAt));
 }
 
 /**
- * Reprend dans le suivi les offres du fil déjà passées en « Postulé / Entretien / Refusé /
- * Abandonné » mais pas encore suivies (offres traitées avant l'existence de cet onglet).
- * Idempotent : la contrainte unique (user, offre) empêche tout doublon.
+ * Statut choisi dans le fil → crée la candidature liée à l'offre, ou change son étape.
+ * C'est la seule écriture : le fil lit ensuite l'étape de la candidature. Renvoie son id.
  */
-export async function importFromFeed(userId: string): Promise<number> {
-  const rows = await db
-    .select({ offerId: offers.id, company: offers.company, title: offers.title, url: offers.url, employmentType: offers.employmentType, status: userOffers.status, createdAt: userOffers.createdAt })
+export async function setOfferStage(userId: string, offerId: string, stage: Stage): Promise<string | null> {
+  const [o] = await db
+    .select({ company: offers.company, title: offers.title, url: offers.url, employmentType: offers.employmentType })
     .from(userOffers)
     .innerJoin(offers, eq(offers.id, userOffers.offerId))
-    .leftJoin(applications, and(eq(applications.userId, userId), eq(applications.offerId, offers.id)))
-    .where(and(eq(userOffers.userId, userId), ne(userOffers.status, 'a_traiter'), eq(userOffers.untracked, false), isNull(applications.id)));
-  if (rows.length === 0) return 0;
-  const inserted = await db.insert(applications).values(rows.map(r => {
-    const stage = STATUS_TO_STAGE[r.status] ?? 'applied';
-    const day = r.createdAt.toISOString().slice(0, 10);
-    return {
-      userId, offerId: r.offerId, company: r.company, title: r.title, url: r.url, origin: 'agent',
-      contract: contractOf(r.employmentType), stage, lastContact: day, ...initialMilestones(stage, day),
-    };
-  })).onConflictDoNothing().returning({ id: applications.id });
-  return inserted.length;
+    .where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId))); // seulement SES offres
+  if (!o) return null;
+  const [row] = await db.insert(applications)
+    .values({ userId, offerId, company: o.company, title: o.title, url: o.url, origin: 'agent', contract: contractOf(o.employmentType), stage, lastContact: today(), ...initialMilestones(stage, today()) })
+    .onConflictDoUpdate({ target: [applications.userId, applications.offerId], set: { stage, lastContact: today(), updatedAt: new Date(), ...milestones(stage) } })
+    .returning({ id: applications.id });
+  return row.id;
 }
 
-/** Changement de statut dans le fil → crée ou met à jour la candidature liée. */
-export async function syncFromOfferStatus(userId: string, offerId: string, status: ApplicationStatus): Promise<void> {
-  const stage = STATUS_TO_STAGE[status];
-  if (!stage) return; // « À traiter » : rien à suivre
-  const [o] = await db.select().from(offers).where(eq(offers.id, offerId));
-  if (!o) return;
-  // Changer le statut est un choix explicite : l'offre revient dans le suivi si elle en avait été retirée
-  await db.update(userOffers).set({ untracked: false }).where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, offerId), eq(userOffers.untracked, true)));
-  await db.insert(applications)
-    .values({ userId, offerId, company: o.company, title: o.title, url: o.url, origin: 'agent', contract: contractOf(o.employmentType), stage, lastContact: today(), ...initialMilestones(stage, today()) })
-    .onConflictDoUpdate({ target: [applications.userId, applications.offerId], set: { stage, lastContact: today(), updatedAt: new Date(), ...milestones(stage) } });
+/** Ce qu'il faut pour écrire la ligne d'une candidature dans le Sheet — toujours filtré par userId. */
+export async function getApplicationForSheet(userId: string, applicationId: string) {
+  const [row] = await db
+    .select({
+      sheetId: profiles.sheetId,
+      sheetGid: profiles.sheetGid,
+      stage: applications.stage,
+      company: applications.company,
+      title: applications.title,
+      url: applications.url,
+      contract: applications.contract,
+      // Offre liée (candidatures venues du fil) : lieu, source et note en plus
+      location: sql<string>`coalesce(${offers.location}, '')`,
+      source: sql<string>`coalesce(${offers.source}, ${applications.origin})`,
+      score: userOffers.score,
+    })
+    .from(applications)
+    .innerJoin(profiles, eq(profiles.userId, applications.userId))
+    .leftJoin(offers, eq(offers.id, applications.offerId))
+    .leftJoin(userOffers, and(eq(userOffers.userId, applications.userId), eq(userOffers.offerId, applications.offerId)))
+    .where(and(eq(applications.userId, userId), eq(applications.id, applicationId)));
+  return row;
 }
 
 export interface ApplicationInput {
@@ -91,8 +103,11 @@ export interface ApplicationInput {
   stage: Stage; lastContact: string | null; notes: string;
 }
 
-export async function createApplication(userId: string, input: ApplicationInput): Promise<void> {
-  await db.insert(applications).values({ userId, ...input, origin: 'manual', ...initialMilestones(input.stage, input.lastContact ?? today()) });
+export async function createApplication(userId: string, input: ApplicationInput): Promise<string> {
+  const [row] = await db.insert(applications)
+    .values({ userId, ...input, origin: 'manual', ...initialMilestones(input.stage, input.lastContact ?? today()) })
+    .returning({ id: applications.id });
+  return row.id;
 }
 
 export async function updateApplication(userId: string, id: string, patch: Partial<ApplicationInput>): Promise<boolean> {
@@ -115,23 +130,15 @@ export async function updateStages(userId: string, ids: string[], stage: Stage, 
 }
 
 /**
- * Supprime une ou plusieurs candidatures. Pour celles liées à une offre du fil, on pose une
- * « pierre tombale » (user_offers.untracked) : sans elle, importFromFeed recréerait la ligne au
- * prochain affichage, puisque l'offre est toujours « Postulé » dans le fil.
+ * Supprime une ou plusieurs candidatures. Une offre du fil liée à une candidature supprimée
+ * redevient simplement « À traiter » (son statut EST la candidature).
  */
 export async function deleteApplications(userId: string, ids: string[]): Promise<number> {
   if (ids.length === 0) return 0;
-  return db.transaction(async tx => {
-    const removed = await tx.delete(applications)
-      .where(and(eq(applications.userId, userId), inArray(applications.id, ids)))
-      .returning({ offerId: applications.offerId });
-    const offerIds = removed.map(r => r.offerId).filter((x): x is string => x !== null);
-    if (offerIds.length) {
-      await tx.update(userOffers).set({ untracked: true })
-        .where(and(eq(userOffers.userId, userId), inArray(userOffers.offerId, offerIds)));
-    }
-    return removed.length;
-  });
+  const removed = await db.delete(applications)
+    .where(and(eq(applications.userId, userId), inArray(applications.id, ids)))
+    .returning({ id: applications.id });
+  return removed.length;
 }
 
 // ─── Contacts ───
@@ -235,24 +242,6 @@ export async function setWeeklyGoal(userId: string, goal: number): Promise<void>
   await db.update(profiles).set({ weeklyGoal: goal }).where(eq(profiles.userId, userId));
 }
 
-/**
- * Rattrapage des jalons pour les lignes créées AVANT leur existence (idempotent, peu coûteux :
- * ne touche que les lignes où il manque quelque chose). Appelé à l'ouverture de l'onglet.
- */
-export async function backfillMilestones(userId: string): Promise<void> {
-  await db.execute(sql`
-    update ${applications} set
-      origin = case when origin = 'manual' and offer_id is not null then 'agent' else origin end,
-      applied_at = case when stage <> 'not_started' then coalesce(applied_at, last_contact, created_at::date) else applied_at end,
-      responded_at = case when stage in ('in_conversation', 'unsuccessful', 'committed') then coalesce(responded_at, last_contact, updated_at::date) else responded_at end,
-      interviewed = interviewed or stage in ('in_conversation', 'committed')
-    where user_id = ${userId} and (
-      (origin = 'manual' and offer_id is not null)
-      or (stage <> 'not_started' and applied_at is null)
-      or (stage in ('in_conversation', 'unsuccessful', 'committed') and responded_at is null)
-      or (stage in ('in_conversation', 'committed') and not interviewed)
-    )`);
-}
 
 export async function getSheetSettings(userId: string): Promise<{ sheetId: string | null; sheetGid: number | null }> {
   const [p] = await db.select({ sheetId: profiles.sheetId, sheetGid: profiles.sheetGid }).from(profiles).where(eq(profiles.userId, userId));

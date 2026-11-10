@@ -1,17 +1,17 @@
 // Vocabulaire du suivi des candidatures. Module PUR (aucun import serveur) : partagé par les
-// composants client et le serveur. Les libellés reprennent ceux du Google Sheet de suivi.
+// composants client et le serveur. L'étape d'une candidature est la SEULE source de vérité du
+// statut : le fil, l'onglet Candidatures et le Google Sheet affichent tous cette valeur.
 
-import type { ApplicationStatus } from './status';
 import { fold } from './text';
 
 export const STAGES = {
-  not_started: { label: '1. Not started', tone: 'bg-red-50 text-red-700' },
-  applied: { label: '2. Applied', tone: 'bg-amber-50 text-amber-800' },
-  in_conversation: { label: '3. In conversation', tone: 'bg-blue-50 text-blue-800' },
-  closed: { label: '4. Closed', tone: 'bg-gray-100 text-gray-600' },
-  unsuccessful: { label: '5. Unsuccessful', tone: 'bg-gray-100 text-gray-500' },
-  waiting: { label: '6. Waiting for response', tone: 'bg-amber-50 text-amber-700' },
-  committed: { label: '7. Committed', tone: 'bg-green-50 text-green-800' },
+  not_started: { label: '1. À postuler', tone: 'bg-red-50 text-red-700' },
+  applied: { label: '2. Envoyée', tone: 'bg-amber-50 text-amber-800' },
+  in_conversation: { label: '3. En discussion', tone: 'bg-blue-50 text-blue-800' },
+  closed: { label: '4. Abandonnée', tone: 'bg-gray-100 text-gray-600' },
+  unsuccessful: { label: '5. Refusée', tone: 'bg-gray-100 text-gray-500' },
+  waiting: { label: '6. En attente de réponse', tone: 'bg-amber-50 text-amber-700' },
+  committed: { label: '7. Acceptée', tone: 'bg-green-50 text-green-800' },
 } as const;
 export type Stage = keyof typeof STAGES;
 export const STAGE_KEYS = Object.keys(STAGES) as Stage[];
@@ -19,13 +19,6 @@ export const STAGE_KEYS = Object.keys(STAGES) as Stage[];
 export const COMPANY_TYPES = ['AI & tech', 'Consulting', 'Financial services', 'Industry'] as const;
 export const CONTRACTS = ['CDI', 'CDD', 'Stage', 'Alternance', 'Freelance', 'VIE'] as const;
 
-/** Statut d'une offre dans le fil → étape de candidature correspondante. */
-export const STATUS_TO_STAGE: Partial<Record<ApplicationStatus, Stage>> = {
-  postule: 'applied',
-  entretien: 'in_conversation',
-  refuse: 'unsuccessful',
-  abandonne: 'closed',
-};
 
 /**
  * Candidature à relancer : envoyée (ou en attente) sans nouvelles depuis RELANCE_DAYS jours…
@@ -63,7 +56,7 @@ export function stageFromLabel(label: string): Stage | null {
   if (n) return STAGE_KEYS[Number(n[1]) - 1];
   if (/not started|a faire|a postuler|pas commence/.test(t)) return 'not_started';
   if (/commit|accept|offre recue|signe|embauch/.test(t)) return 'committed';
-  if (/conversation|entretien|interview|echange/.test(t)) return 'in_conversation';
+  if (/conversation|discussion|entretien|interview|echange/.test(t)) return 'in_conversation';
   if (/unsuccess|refus|rejet|reject|negati/.test(t)) return 'unsuccessful';
   if (/wait|attente|relance/.test(t)) return 'waiting';
   if (/closed|abandon|ferme|clos/.test(t)) return 'closed';

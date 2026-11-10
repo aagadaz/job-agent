@@ -11,6 +11,7 @@ import {
   updateApplication, updateContact,
 } from '@/db/applications';
 import { parseSheetGid, parseSheetId, readTrackingRows } from '@/lib/sheets';
+import { pushManyToSheet, pushToSheet } from '@/lib/sheet-sync';
 
 // Server actions de l'onglet Candidatures. Comme partout : session revérifiée, chaque champ
 // validé (zod), et l'identifiant de l'utilisateur imposé par le serveur dans chaque requête.
@@ -48,11 +49,12 @@ export async function addApplication(_prev: ActionResult | null, form: FormData)
   const userId = await requireUserId();
   const parsed = ApplicationSchema.safeParse(fromForm(form, Object.keys(ApplicationSchema.shape)));
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
-  await createApplication(userId, parsed.data as never);
+  const id = await createApplication(userId, parsed.data as never);
   // Type laissé vide → Claude le devine APRÈS la réponse (l'utilisateur n'attend pas)
   if (!parsed.data.companyType) after(() => classifyInBackground(userId));
   revalidatePath('/applications');
-  return { ok: true, message: 'Candidature ajoutée.' };
+  const sheet = await pushToSheet(userId, id);
+  return sheet.ok ? { ok: true, message: `Candidature ajoutée.${sheet.message ? ` ${sheet.message}.` : ''}` } : sheet;
 }
 
 /** Modification d'UN champ depuis le tableau (édition en ligne). */
@@ -64,8 +66,12 @@ export async function editApplication(id: string, field: string, value: string |
   const parsed = ApplicationSchema.shape[key.data as keyof typeof ApplicationSchema.shape].safeParse(value);
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
   const ok = await updateApplication(userId, idOk.data, { [key.data]: parsed.data });
+  if (!ok) return { ok: false, message: 'Candidature introuvable.' };
   revalidatePath('/applications');
-  return ok ? { ok: true, message: '' } : { ok: false, message: 'Candidature introuvable.' };
+  revalidatePath('/offers'); // l'étape est aussi le statut affiché dans le fil
+  // Changement d'étape (ou ajout du lien) → le Sheet suit, comme depuis le fil
+  if (key.data === 'stage' || key.data === 'url') return pushToSheet(userId, idOk.data);
+  return { ok: true, message: '' };
 }
 
 /** Changement d'étape de plusieurs lignes d'un coup (sélection dans le tableau). */
@@ -77,8 +83,11 @@ export async function changeStages(ids: string[], stage: string, touchContact: b
     touchContact: z.boolean(),
   }).safeParse({ ids, stage, touchContact });
   if (!parsed.success) return { ok: false, message: 'Sélection ou étape invalide.' };
-  const n = await updateStages(userId, [...new Set(parsed.data.ids)], parsed.data.stage, parsed.data.touchContact);
+  const unique = [...new Set(parsed.data.ids)];
+  const n = await updateStages(userId, unique, parsed.data.stage, parsed.data.touchContact);
+  after(() => pushManyToSheet(userId, unique)); // le Sheet suit, en arrière-plan
   revalidatePath('/applications');
+  revalidatePath('/offers');
   return { ok: true, message: `${n} candidature${n > 1 ? 's' : ''} passée${n > 1 ? 's' : ''} en « ${STAGES[parsed.data.stage].label} ».` };
 }
 
@@ -89,6 +98,7 @@ export async function removeApplications(ids: string[]): Promise<ActionResult> {
   if (!parsed.success) return { ok: false, message: 'Sélection invalide.' };
   const n = await deleteApplications(userId, [...new Set(parsed.data)]);
   revalidatePath('/applications');
+  revalidatePath('/offers'); // les offres liées redeviennent « À traiter »
   return { ok: true, message: `${n} candidature${n > 1 ? 's' : ''} supprimée${n > 1 ? 's' : ''}.` };
 }
 

@@ -1,7 +1,5 @@
 import Link from 'next/link';
-import { after } from 'next/server';
-import { backfillMilestones, getSheetSettings, getWeeklyGoal, importFromFeed, listApplications, listCategories, listContacts } from '@/db/applications';
-import { classifyInBackground } from '@/lib/classify-runner';
+import { getSheetSettings, getWeeklyGoal, listApplications, listCategories, listContacts } from '@/db/applications';
 import { computeDashboard } from '@/lib/application-stats';
 import { STAGES, STAGE_KEYS, companyKey, needsFollowUp, RELANCE_DAYS, type Stage } from '@/lib/applications';
 import { requireUserId } from '@/lib/session';
@@ -19,10 +17,6 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
   const p = await searchParams;
   const tab = p.tab === 'contacts' ? 'contacts' : 'applications';
 
-  // Les offres du fil déjà marquées « Postulé »… rejoignent le suivi (idempotent)
-  // Nouvelles lignes venues du fil → leur type d'entreprise est deviné après l'affichage
-  if (await importFromFeed(userId)) after(() => classifyInBackground(userId));
-  await backfillMilestones(userId);
   const [apps, contacts, goal, sheet, categories] = await Promise.all([listApplications(userId), listContacts(userId), getWeeklyGoal(userId), getSheetSettings(userId), listCategories(userId)]);
   const untyped = apps.filter(a => !a.companyType).length;
   const dashboard = computeDashboard(apps.map(a => ({ ...a, stage: a.stage as Stage })), goal);
@@ -35,7 +29,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
 
   const views: ApplicationView[] = apps.map(a => ({
     id: a.id, company: a.company, companyType: a.companyType, title: a.title, url: a.url, contract: a.contract,
-    stage: a.stage as Stage, lastContact: a.lastContact, notes: a.notes, fromAgent: a.offerId !== null,
+    stage: a.stage as Stage, lastContact: a.lastContact, notes: a.notes, offerId: a.offerId, hasLetter: a.hasLetter,
     followUp: needsFollowUp(a.stage as Stage, a.lastContact),
     contacts: (contactsBy.get(companyKey(a.company)) ?? []).map(c => ({ name: c.name, role: c.role })),
   }));
@@ -117,7 +111,7 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
             categories={categories}
             rows={shown.map(a => ({ ...a, contactsHref: `/applications?tab=contacts&company=${encodeURIComponent(a.company)}` }))}
             emptyMessage={views.length === 0
-              ? 'Aucune candidature pour l’instant. Importe ton Google Sheet, passe une offre en « Postulé » dans ton fil, ou ajoute une candidature faite ailleurs.'
+              ? 'Aucune candidature pour l’instant. Importe ton Google Sheet, change le statut d’une offre dans ton fil, ou ajoute une candidature faite ailleurs.'
               : 'Aucune candidature ne correspond à ces filtres.'}
           />
         </>
