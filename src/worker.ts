@@ -111,26 +111,37 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   const offerIds = await upsertOffers(batch);
   // Filtre d'expérience AVANT Claude : inutile de payer la notation d'une offre « 8 ans+ »
   const maxYears = profile.maxExperienceYears;
-  const tooSenior = batch.filter(o => tooMuchExperience(requiredYears(o.title, o.description, o.qualifications), maxYears));
-  const toScore = batch.filter(o => !tooSenior.includes(o));
-  if (tooSenior.length > 0) console.log(`   🎓 ${tooSenior.length} offres exigent plus de ${maxYears} ans d'expérience (non notées)`);
+  const tooSenior = new Set(batch.filter(o => tooMuchExperience(requiredYears(o.title, o.description, o.qualifications), maxYears)));
+  const toScore = batch.filter(o => !tooSenior.has(o));
+  if (tooSenior.size > 0) console.log(`   🎓 ${tooSenior.size} offres exigent plus de ${maxYears} ans d'expérience (non notées)`);
   // Mode sans clé : même suite du pipeline, avec une notation « vide » (scoring: null).
   // Une offre non notée n'est jamais écartée par le seuil (cf. insertUserOffers).
-  const scored = client
-    ? [...(await scoreOffers(client, profile.cvText!, toScore)), ...tooSenior.map(o => ({ ...o, scoring: null }))]
-    : batch.map(o => ({ ...o, scoring: null }));
+  let scoreFailed = 0;
+  let scored;
+  if (client) {
+    const results = await scoreOffers(client, profile.cvText!, toScore);
+    // Notation échouée (erreur ponctuelle, refus) : on N'ENREGISTRE PAS l'offre pour cet
+    // utilisateur. Elle reste ainsi « nouvelle » et sera retentée à la prochaine exécution ;
+    // l'enregistrer avec une note vide la marquerait « vue » pour toujours.
+    const ok = results.filter(o => o.scoring !== null);
+    scoreFailed = results.length - ok.length;
+    if (scoreFailed > 0) console.log(`   🔁 ${scoreFailed} offres non notées (échec), retentées à la prochaine exécution`);
+    scored = [...ok, ...[...tooSenior].map(o => ({ ...o, scoring: null }))];
+  } else {
+    scored = batch.map(o => ({ ...o, scoring: null }));
+  }
   const inserted = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
   // Puis on (re)classe tout le fil : expérience trop élevée, offres disparues des sources
   const feed = await reconcileFeed(user.id, maxYears, profile.useAdzuna ? [] : ['adzuna']);
   console.log(`   Fil : ${feed.experience} écartées (expérience), ${feed.expired} probablement fermées, ${feed.restored} réintégrées`);
-  const kept = inserted.kept - tooSenior.length;
-  const rejected = inserted.rejected + tooSenior.length;
+  const kept = inserted.kept - tooSenior.size;
+  const rejected = inserted.rejected + tooSenior.size;
 
   return {
     fetched: fetched.length, unique: unique.length, afterFilters: filtered.length,
     new: batch.length, deferred: fresh.length - batch.length, kept, rejected,
     unscored: mode === 'unscored' ? 1 : 0,
-    tooSenior: tooSenior.length, expired: feed.expired,
+    tooSenior: tooSenior.size, expired: feed.expired, scoreFailed,
   };
 }
 

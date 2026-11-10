@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import fs from 'fs';
 
-const MODEL = process.env.CLAUDE_MODEL ?? 'claude-haiku-4-5-20251001';
+const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-5-5';
 const DEFAULT_KEYWORDS = ['data scientist', 'machine learning engineer', 'AI engineer'];
 
 /**

@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 // La rédaction profite d'un modèle plus fort que la notation (Haiku écrit de façon plus
-// raide et stéréotypée). Sonnet par défaut, réglable avec CLAUDE_LETTER_MODEL.
-const MODEL = process.env.CLAUDE_LETTER_MODEL ?? 'claude-sonnet-4-5';
+// raide et stéréotypée). Sonnet 5.5 par défaut, réglable avec CLAUDE_LETTER_MODEL.
+const MODEL = process.env.CLAUDE_LETTER_MODEL || 'claude-sonnet-5-5';
 const MAX_NOTE_CHARS = 600;
 const MAX_OFFER_CHARS = 6_000;
 const MAX_CV_CHARS = 12_000;
@@ -69,14 +69,22 @@ export async function generateCoverLetter(client: Anthropic, cvText: string, off
   const personal = note?.trim() ? `\n\n<note>\n${note.trim().slice(0, MAX_NOTE_CHARS)}\n</note>` : '';
   const message = await client.messages.create({
     model: MODEL,
-    max_tokens: 1200,
-    temperature: 0.7, // un peu de variété : « Régénérer » doit proposer une autre version
+    // Sonnet 5.5 réfléchit avant d'écrire, et cette réflexion compte dans max_tokens :
+    // la marge évite une lettre coupée. (La lettre elle-même fait ~400 tokens.)
+    max_tokens: 8000,
+    // Effort « medium » : rédaction courte et cadrée, pas besoin d'une longue réflexion.
+    // Pas de `temperature` : refusée par Sonnet 5.5. La variété de « Régénérer » vient de
+    // l'échantillonnage par défaut.
+    output_config: { effort: 'medium' },
     system: SYSTEM_PROMPT,
     messages: [{
       role: 'user',
       content: `<cv>\n${cvText.slice(0, MAX_CV_CHARS)}\n</cv>\n\n<offre>\n${formatOffer(offer)}\n</offre>${personal}`,
     }],
   });
+  if (message.stop_reason === 'refusal') throw new Error('Rédaction refusée par Claude');
+  if (message.stop_reason === 'max_tokens') throw new Error('Lettre coupée (max_tokens atteint)');
+  // Lecture par type de bloc : la réponse peut commencer par des blocs « thinking »
   const text = message.content.flatMap(b => (b.type === 'text' ? [b.text] : [])).join('').trim();
   if (!text) throw new Error('Réponse vide');
   return text;
