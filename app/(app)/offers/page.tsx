@@ -31,7 +31,7 @@ const REJECT_LABELS = {
 const SOURCE_LABELS: Record<string, string> = {
   adzuna: 'Adzuna', francetravail: 'France Travail', greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby',
   workable: 'Workable', recruitee: 'Recruitee', smartrecruiters: 'SmartRecruiters', workday: 'Workday',
-  personio: 'Personio', teamtailor: 'Teamtailor', website: 'Site carrières',
+  personio: 'Personio', teamtailor: 'Teamtailor', website: 'Site carrières', manual: 'Ajout manuel',
 };
 const SINCE_LABELS: Record<number, string> = { 1: 'Dernières 24 h', 7: '7 derniers jours', 30: '30 derniers jours' };
 
@@ -302,9 +302,9 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                   <Link href={`/offers/${o.offerId}`} className="font-medium hover:underline">
                     {o.title}
                   </Link>
-                  <a href={o.url} target="_blank" rel="noopener noreferrer" title="Annonce originale" aria-label="Annonce originale" className="ml-1 inline-block px-1 py-0.5 text-sm text-gray-400 hover:text-gray-700">
+                  {/^https?:/.test(o.url) && <a href={o.url} target="_blank" rel="noopener noreferrer" title="Annonce originale" aria-label="Annonce originale" className="ml-1 inline-block px-1 py-0.5 text-sm text-gray-400 hover:text-gray-700">
                     ↗
-                  </a>
+                  </a>}
                   {REDIRECTING_SOURCES.has(o.source) && (
                     <a
                       href={offerSearchLinks(o.title, o.company, o.location)[0].url}

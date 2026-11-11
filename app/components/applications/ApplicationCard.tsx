@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { editApplication, removeApplications } from '../../applications-actions';
 import { CONTRACTS, STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { EditDate, EditSelect, EditText } from './Editable';
+import { AnalyzeButton } from './AnalyzeButton';
 import type { ApplicationView } from './ApplicationRow';
 
 /**
@@ -54,10 +55,12 @@ export function ApplicationCard({ a, contactsHref, selected, onToggle, categorie
             {a.contacts.length} contact{a.contacts.length > 1 ? 's' : ''}
           </a>
         )}
-        {a.offerId && (
+        {a.offerId ? (
           <a href={`/offers/${a.offerId}`} className="py-1 text-blue-700">
             {a.hasLetter ? 'Lettre rédigée · fiche de l’offre' : 'Fiche de l’offre'}
           </a>
+        ) : (
+          <AnalyzeButton applicationId={a.id} compact />
         )}
       </div>
 

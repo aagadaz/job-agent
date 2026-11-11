@@ -48,14 +48,17 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
           <h1 className="text-lg font-semibold sm:text-xl">{offer.title}</h1>
           <p className="text-sm text-gray-600">{meta}</p>
           {offer.salary && offer.salary !== 'Non précisé' && <p className="text-sm text-gray-600">Salaire : {offer.salary}</p>}
-          <a
-            href={offer.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-block rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white sm:py-1.5"
-          >
-            Voir l&apos;annonce originale ↗
-          </a>
+          {/* Annonce collée sans lien (candidature ajoutée à la main) : pas de page à ouvrir */}
+          {/^https?:/.test(offer.url) && (
+            <a
+              href={offer.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-block rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white sm:py-1.5"
+            >
+              Voir l&apos;annonce originale ↗
+            </a>
+          )}
           {REDIRECTING_SOURCES.has(offer.source) && (
             <p className="mt-2 text-sm text-gray-500">
               Le lien {offer.source} ne s&apos;ouvre pas ? Chercher l&apos;offre sur{' '}
