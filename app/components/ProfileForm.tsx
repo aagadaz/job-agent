@@ -3,6 +3,7 @@
 import { useActionState, useState } from 'react';
 import { COUNTRIES, COUNTRY_CODES, type CountryCode, type SearchArea } from '@/lib/countries';
 import { updateProfile } from '../actions';
+import { CONTRACTS } from '@/lib/contracts';
 import { ResultMessage } from './ResultMessage';
 
 export interface ProfileFormValues {
@@ -13,6 +14,7 @@ export interface ProfileFormValues {
   rejectThreshold: number;
   maxExperienceYears: number | null;
   useAdzuna: boolean;
+  contractTypes: string[];
 }
 
 const input = 'mt-1 w-full rounded-md border px-3 py-2 text-sm';
@@ -48,6 +50,20 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
         />
         ans d&apos;expérience <span className="font-normal text-gray-500">(vide = pas de limite)</span>
       </label>
+      <fieldset className="min-w-0 rounded-md border p-3 sm:p-4">
+        <legend className="px-1 text-sm font-medium">Types de contrat</legend>
+        <p className="mb-2 text-xs text-gray-500">
+          Aucune case cochée = tous les contrats. Une offre qui ne précise pas son contrat est toujours gardée.
+        </p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+          {CONTRACTS.map(c => (
+            <label key={c} className="flex items-center gap-2 py-1 text-sm">
+              <input type="checkbox" name="contractTypes" value={c} defaultChecked={initial.contractTypes.includes(c)} className="size-4 accent-gray-900" />
+              {c}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <label className="flex items-start gap-2 text-sm">
         <input name="useAdzuna" type="checkbox" defaultChecked={initial.useAdzuna} className="mt-1" />
         <span>

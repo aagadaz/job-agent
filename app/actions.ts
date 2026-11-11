@@ -17,6 +17,7 @@ import { getReconciledLastRun } from '@/lib/run-status';
 import { checkTrackingTab, parseSheetGid, parseSheetId } from '@/lib/sheets';
 import { pushManyToSheet, pushToSheet } from '@/lib/sheet-sync';
 import { STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
+import { CONTRACTS } from '@/lib/contracts';
 import { mapPool } from '@/lib/concurrency';
 import { COUNTRY_CODES, type CountryCode } from '@/lib/countries';
 import { readCompanyLines } from '@/lib/csv';
@@ -55,6 +56,7 @@ const ProfileSchema = z.object({
   rejectThreshold: z.coerce.number().int().min(0).max(100),
   // Champ vide = pas de limite. Attention : z.coerce.number() transformerait "" en 0 (Number("") === 0) !
   useAdzuna: z.boolean(),
+  contractTypes: z.array(z.enum(CONTRACTS)).max(CONTRACTS.length),
   maxExperienceYears: z
     .string()
     .trim()
@@ -74,6 +76,7 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     maxExperienceYears: form.get('maxExperienceYears') ?? '',
     // Case à cocher : présente dans le formulaire SEULEMENT si cochée (valeur "on")
     useAdzuna: form.get('useAdzuna') === 'on',
+    contractTypes: [...new Set(form.getAll('contractTypes').map(String))],
   });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
 
@@ -96,7 +99,7 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
   // Application IMMÉDIATE des réglages au fil existant (Adzuna désactivé, limite d'expérience
   // modifiée) : même fonction que le worker, donc exactement les mêmes règles. Pas besoin
   // d'attendre la prochaine recherche.
-  await reconcileFeed(userId, parsed.data.maxExperienceYears, parsed.data.useAdzuna ? [] : ['adzuna']);
+  await reconcileFeed(userId, parsed.data.maxExperienceYears, parsed.data.useAdzuna ? [] : ['adzuna'], parsed.data.contractTypes);
   revalidatePath('/profile');
   revalidatePath('/offers');
   return { ok: true, message: 'Profil enregistré.' };

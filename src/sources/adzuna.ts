@@ -35,6 +35,18 @@ interface AdzunaResponse {
 export interface AdzunaSearchOptions {
   country: string;  // code Adzuna du pays (fr, be, de…)
   location: string; // ville, ou vide = tout le pays
+  contractTypes?: string[]; // contrats voulus (profil) ; vide = tous
+}
+
+/**
+ * Filtre de contrat côté Adzuna, quand il est exact : « permanent » = CDI, « contract » = durée
+ * déterminée. Adzuna ne sait pas isoler stage, alternance ou VIE : dans les autres cas on ne
+ * filtre pas ici, le worker trie ensuite offre par offre (src/lib/contracts.ts).
+ */
+function contractParams(wanted: string[] = []): Record<string, string> {
+  if (wanted.length === 1 && wanted[0] === 'CDI') return { permanent: '1' };
+  if (wanted.length === 1 && wanted[0] === 'CDD') return { contract: '1' };
+  return {};
 }
 
 function getCredentials(): { appId: string; appKey: string } {
@@ -80,7 +92,7 @@ async function fetchPage(keyword: string, page: number, opts: AdzunaSearchOption
     ...(opts.location ? { where: opts.location } : {}),
     results_per_page: String(RESULTS_PER_PAGE),
     max_days_old: String(MAX_DAYS_OLD),
-    permanent: '1',
+    ...contractParams(opts.contractTypes),
     sort_by: 'date',
   });
 

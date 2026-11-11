@@ -10,6 +10,7 @@ import { StatusSelect } from '../../components/StatusSelect';
 import { PAGE_SIZE, countOffers, feedFacets, getUserWithProfile, listOffers } from '@/db/dashboard';
 import { DEFAULT_SORT, DIR_LABELS, SORT_KEYS, SORT_LABELS, cycleSort, isDefaultSort, serializeSort } from '@/lib/offer-sort';
 import { FEED_STATUS_LABELS } from '@/lib/status';
+import { classifyContract } from '@/lib/contracts';
 import { BULK_FORM_ID, BulkOffersBar } from '../../components/BulkOffersBar';
 import { AutoSubmitForm } from '../../components/AutoSubmitForm';
 import { SINCE_OPTIONS, SCORE_OPTIONS, activeCount, filtersHref, parseFilters, type ParsedFilters, type RawParams } from './filters';
@@ -23,6 +24,7 @@ const REJECT_LABELS = {
   score: 'note sous ton seuil',
   experience: 'trop d\u2019expérience exigée',
   source: 'source désactivée dans ton profil',
+  contract: 'type de contrat hors de tes critères (Profil)',
   expired: 'probablement fermée (retirée par l\u2019entreprise ou annonce trop ancienne)',
 } as const;
 
@@ -314,7 +316,9 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                     </a>
                   )}
                   <p className="text-sm text-gray-600">
-                    {o.company} · {o.location || 'Lieu non précisé'} · <b className="font-medium">{countryLabel(o.country)}</b> · {o.source}
+                    {o.company} · {o.location || 'Lieu non précisé'} · <b className="font-medium">{countryLabel(o.country)}</b>
+                    {(() => { const c = classifyContract(o.employmentType, o.title); return c ? <> · <b className="font-medium">{c}</b></> : null; })()}
+                    {` · ${o.source}`}
                     {o.datePosted && ` · publiée le ${o.datePosted}`}
                     {` · ajoutée le ${o.addedAt.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })}`}
                   </p>

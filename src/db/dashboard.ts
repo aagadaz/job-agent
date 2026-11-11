@@ -63,6 +63,7 @@ export interface ProfileInput {
   rejectThreshold: number;
   maxExperienceYears: number | null; // null = pas de limite
   useAdzuna: boolean;
+  contractTypes: string[];
   cvText?: string; // absent = on garde le CV actuel
 }
 
@@ -272,6 +273,7 @@ export async function listOffers(userId: string, opts: FeedFilters & { sort?: So
       url: offers.url,
       source: offers.source,
       datePosted: offers.datePosted,
+      employmentType: offers.employmentType,
       score: userOffers.score,
       verdict: userOffers.verdict,
       justification: userOffers.justification,

@@ -4,6 +4,7 @@ import { users, profiles, offers, userOffers, runs, companies } from './schema';
 import type { JobDetail, ScoredOffer } from '../lib/types';
 import { normalizeUrl } from '../lib/url';
 import { requiredYears, tooMuchExperience } from '../lib/experience';
+import { classifyContract, contractWanted } from '../lib/contracts';
 import type { RejectReason } from './schema';
 import { noApplication } from './feed-status';
 
@@ -173,7 +174,7 @@ export async function touchOffers(urls: string[]): Promise<void> {
  * Ne touche jamais : les offres écartées par la note (décision de Claude), celles que
  * l'utilisateur a supprimées, ni celles dont il a changé le statut (il y a postulé, etc.).
  */
-export async function reconcileFeed(userId: string, maxYears: number | null, disabledSources: string[] = []) {
+export async function reconcileFeed(userId: string, maxYears: number | null, disabledSources: string[] = [], contractTypes: string[] = []) {
   const rows = await db
     .select({
       offerId: userOffers.offerId,
@@ -181,6 +182,7 @@ export async function reconcileFeed(userId: string, maxYears: number | null, dis
       requiredYears: userOffers.requiredYears,
       source: offers.source,
       title: offers.title,
+      employmentType: offers.employmentType,
       description: offers.description,
       qualifications: offers.qualifications,
       // date_posted est un texte ISO (« 2026-10-01T09:30:00Z ») : la comparaison de chaînes
@@ -203,7 +205,7 @@ export async function reconcileFeed(userId: string, maxYears: number | null, dis
         // reject_reason ont rejected = true et un motif null ; on ne doit pas les ressusciter)
         and(isNull(userOffers.rejectReason), eq(userOffers.rejected, false)),
         // …ou écartées par un motif automatique, donc réévaluable
-        inArray(userOffers.rejectReason, ['experience', 'expired', 'source']),
+        inArray(userOffers.rejectReason, ['experience', 'expired', 'source', 'contract']),
       ),
     ));
 
@@ -217,6 +219,7 @@ export async function reconcileFeed(userId: string, maxYears: number | null, dis
     // Ordre de priorité : la source désactivée l'emporte (choix explicite de l'utilisateur)
     const reason: RejectReason | null =
       disabledSources.includes(r.source) ? 'source'
+      : !contractWanted(classifyContract(r.employmentType, r.title), contractTypes) ? 'contract'
       : tooMuchExperience(years, maxYears) ? 'experience'
       : r.stale ? 'expired'
       : null;
@@ -236,5 +239,5 @@ export async function reconcileFeed(userId: string, maxYears: number | null, dis
   }
 
   const count = (reason: RejectReason) => groups.get(reason)?.length ?? 0;
-  return { experience: count('experience'), expired: count('expired'), restored: groups.get(null)?.length ?? 0 };
+  return { experience: count('experience'), contract: count('contract'), expired: count('expired'), restored: groups.get(null)?.length ?? 0 };
 }
