@@ -13,7 +13,7 @@ Grille de notation (score 0-100) :
 - 40 pts : compétences techniques exigées présentes dans le CV (langages, frameworks, ML/LLM, data, cloud)
 - 25 pts : niveau d'expérience compatible avec celui du candidat
 - 20 pts : domaine et missions proches des expériences du candidat
-- 15 pts : conditions (CDI, localisation, éléments rédhibitoires éventuels)
+- 15 pts : conditions (localisation, éléments rédhibitoires éventuels ; le type de contrat est déjà filtré selon les souhaits du candidat, ne le pénalise pas)
 
 Sois strict et factuel : ne crédite une compétence que si elle apparaît explicitement dans le CV.
 Une offre exigeant beaucoup plus d'expérience que le candidat n'en a ne peut pas dépasser 45.`;

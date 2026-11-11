@@ -52,6 +52,7 @@ export default async function ProfilePage() {
             // undefined (pas encore de profil) → défaut 5 ; null (choisi) → pas de limite
             maxExperienceYears: profile === null || profile === undefined ? 5 : profile.maxExperienceYears,
             useAdzuna: profile?.useAdzuna ?? true,
+            contractTypes: profile?.contractTypes ?? [],
           }}
         />
       </section>

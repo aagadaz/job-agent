@@ -127,6 +127,13 @@
       "when": 1794386978910,
       "tag": "0017_cv_library",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794394539317,
+      "tag": "0018_contract_types",
+      "breakpoints": true
     }
   ]
 }

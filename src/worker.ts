@@ -13,6 +13,7 @@ import { COUNTRIES, type SearchArea } from './lib/countries';
 import { scoreOffers } from './lib/scorer';
 import type { JobDetail } from './lib/types';
 import { normalizeUrl } from './lib/url';
+import { classifyContract, contractWanted } from './lib/contracts';
 import { requiredYears, tooMuchExperience } from './lib/experience';
 import { mapPool } from './lib/concurrency';
 import { getSettings } from './db/settings';
@@ -24,7 +25,7 @@ import { fetchCompanyJobs } from './sources/ats';
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
 
 /** Collecte toutes les sources en parallèle. Une source en panne n'empêche pas les autres. */
-async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean, seen: Set<string>): Promise<JobDetail[]> {
+async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean, contractTypes: string[], seen: Set<string>): Promise<JobDetail[]> {
   const companies = await getCompanies(userId);
   const countries = [...new Set(areas.map(a => a.country))];
 
@@ -38,7 +39,7 @@ async function collect(userId: string, keywords: string[], areas: SearchArea[], 
     }
     return [{
       label: `Adzuna ${COUNTRIES[area.country].label}`, // sans la ville : logs potentiellement publics
-      run: () => fetchAdzunaOffers(keywords, { country: adzunaCode, location: area.city }),
+      run: () => fetchAdzunaOffers(keywords, { country: adzunaCode, location: area.city, contractTypes }),
     }];
   });
 
@@ -93,12 +94,15 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
 
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
   const seen = await getSeenUrls(user.id);
-  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna, seen);
+  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna, profile.contractTypes, seen);
   // Toutes les offres renvoyées sont « encore en ligne », y compris celles déjà vues (et les pages
   // de sites carrières non relues) : c'est ce qui permet de repérer celles qui ont disparu
   await touchOffers(fetched.map(o => o.url));
   const unique = dedupeAcrossSources(fetched.filter(o => !o.knownOnly));
-  const filtered = includeByTitle(excludeByTitle(unique, profile.excludeTerms), profile.includeTerms);
+  // Contrat hors critère : écarté sans être enregistré (gratuit, et l'offre redevient candidate
+  // si l'utilisateur élargit ses critères). Contrat inconnu : gardé.
+  const filtered = includeByTitle(excludeByTitle(unique, profile.excludeTerms), profile.includeTerms)
+    .filter(o => contractWanted(classifyContract(o.employmentType, o.title), profile.contractTypes));
   const fresh = filtered.filter(o => !seen.has(normalizeUrl(o.url)));
   console.log(`   ${fetched.length} collectées → ${unique.length} uniques → ${filtered.length} après filtres → ${fresh.length} nouvelles`);
 
@@ -132,8 +136,8 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   }
   const inserted = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
   // Puis on (re)classe tout le fil : expérience trop élevée, offres disparues des sources
-  const feed = await reconcileFeed(user.id, maxYears, profile.useAdzuna ? [] : ['adzuna']);
-  console.log(`   Fil : ${feed.experience} écartées (expérience), ${feed.expired} probablement fermées, ${feed.restored} réintégrées`);
+  const feed = await reconcileFeed(user.id, maxYears, profile.useAdzuna ? [] : ['adzuna'], profile.contractTypes);
+  console.log(`   Fil : ${feed.experience} écartées (expérience), ${feed.contract} (contrat), ${feed.expired} probablement fermées, ${feed.restored} réintégrées`);
   const kept = inserted.kept - tooSenior.size;
   const rejected = inserted.rejected + tooSenior.size;
 

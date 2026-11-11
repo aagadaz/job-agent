@@ -4,7 +4,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import type { SearchArea } from '../lib/countries';
 
-export type RejectReason = 'score' | 'experience' | 'expired' | 'source';
+export type RejectReason = 'score' | 'experience' | 'expired' | 'source' | 'contract';
 
 // ─── Énumérations : des ensembles fermés de valeurs, vérifiés par PostgreSQL ───
 // Ajouter une valeur = migration "ALTER TYPE ... ADD VALUE" (toujours en fin de liste)
@@ -38,6 +38,9 @@ export const profiles = pgTable('profiles', {
   maxExperienceYears: integer('max_experience_years').default(5),
   // Recherche Adzuna (agrégateur) activée ? false = pages carrières uniquement
   useAdzuna: boolean('use_adzuna').notNull().default(true),
+  // Types de contrat voulus (CDI, CDD, Stage, Alternance, Freelance, VIE). Vide = tous.
+  // Une offre dont le contrat est inconnu est toujours gardée (cf. src/lib/contracts.ts).
+  contractTypes: text('contract_types').array().notNull().default([]),
   // Texte du CV utilisé pour la notation, les mots-clés et (par défaut) les lettres : copie du
   // texte du CV actif de la bibliothèque (table cvs). Le worker ne lit que ce champ.
   cvText: text('cv_text'),
