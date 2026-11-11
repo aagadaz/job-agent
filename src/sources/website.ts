@@ -293,3 +293,63 @@ export async function probeWebsite(listingUrl: string): Promise<{ ok: true; coun
     return { ok: false, reason: e instanceof Blocked ? 'blocked' : 'no_structured_data' };
   }
 }
+
+// ─── Lecture d'UNE annonce à la demande (candidature ajoutée à la main) ───
+
+export type JobPageResult =
+  | { ok: true; job: JobDetail }
+  | { ok: false; reason: 'invalid' | 'excluded' | 'robots' | 'blocked' | 'unreadable' };
+
+const MAX_PAGE_TEXT = 12_000;
+
+/**
+ * Adresse publique uniquement : le serveur ne doit pas servir à interroger le réseau interne
+ * (localhost, adresses privées, métadonnées cloud). Vérification sur le NOM d'hôte.
+ */
+function isPublicHttpUrl(u: URL): boolean {
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return false;
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) {
+    const [a, b] = h.split('.').map(Number);
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)) return false;
+  }
+  if (h.includes(':')) return false; // IPv6 littérale : pas d'annonce d'emploi servie ainsi
+  return true;
+}
+
+/**
+ * Lit l'annonce d'un lien donné par l'utilisateur, avec les mêmes règles de bonne conduite que
+ * la collecte (robots.txt, pas de contournement, LinkedIn/Indeed exclus). Données structurées
+ * JobPosting d'abord ; à défaut, le texte de la page (Claude saura y trouver l'annonce).
+ */
+export async function readJobPage(url: string): Promise<JobPageResult> {
+  let u: URL;
+  try { u = new URL(url); } catch { return { ok: false, reason: 'invalid' }; }
+  if (!isPublicHttpUrl(u)) return { ok: false, reason: 'invalid' };
+  if (isExcludedHost(u.hostname)) return { ok: false, reason: 'excluded' };
+
+  let html: string | null;
+  try {
+    const rules = await loadRobots(u.origin);
+    if (rules && !isAllowed(rules, u.pathname + u.search)) return { ok: false, reason: 'robots' };
+    html = await politeGet(url);
+  } catch {
+    return { ok: false, reason: 'blocked' };
+  }
+  if (!html) return { ok: false, reason: 'unreadable' };
+
+  const posting = extractJobPostings(html).map(p => toJobDetail(p, url, '')).find((j): j is JobDetail => j !== null);
+  if (posting) return { ok: true, job: { ...posting, url } };
+
+  // Pas de données structurées : titre de la page + texte du contenu principal
+  const title = htmlToText(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i.exec(html)?.[1]
+    ?? /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? '');
+  const main = /<main[\s\S]*?<\/main>/i.exec(html)?.[0] ?? /<body[\s\S]*<\/body>/i.exec(html)?.[0] ?? html;
+  const text = htmlToText(main.replace(/<(script|style|nav|header|footer|svg)[\s\S]*?<\/\1>/gi, ' ')).slice(0, MAX_PAGE_TEXT);
+  if (text.length < 300) return { ok: false, reason: 'unreadable' }; // page vide ou rendue en JavaScript
+  return {
+    ok: true,
+    job: { title, company: '', location: '', description: text, qualifications: '', salary: '', employmentType: '', datePosted: '', url, source: 'manual' },
+  };
+}

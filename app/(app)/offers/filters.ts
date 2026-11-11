@@ -9,7 +9,7 @@ import { SUPPORTED_ATS } from '@/sources/ats';
 
 export type RawParams = Record<string, string | string[] | undefined>;
 
-export const SOURCES = ['adzuna', 'francetravail', ...SUPPORTED_ATS] as const;
+export const SOURCES = ['adzuna', 'francetravail', 'manual', ...SUPPORTED_ATS] as const;
 export const SINCE_OPTIONS = [1, 7, 30] as const;
 export const SCORE_OPTIONS = [50, 60, 70, 80] as const;
 
