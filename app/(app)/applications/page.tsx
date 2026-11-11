@@ -6,7 +6,7 @@ import { requireUserId } from '@/lib/session';
 import { type ApplicationView } from '../../components/applications/ApplicationRow';
 import { ApplicationsTable } from '../../components/applications/ApplicationsTable';
 import { AddApplicationForm } from '../../components/applications/AddApplicationForm';
-import { AddContactForm, ContactRow, type ContactView } from '../../components/applications/ContactsPanel';
+import { AddContactForm, ContactCard, ContactRow, type ContactView } from '../../components/applications/ContactsPanel';
 import { Dashboard } from '../../components/applications/Dashboard';
 import { ImportSheetForm } from '../../components/applications/ImportSheetForm';
 
@@ -130,7 +130,12 @@ export default async function ApplicationsPage({ searchParams }: { searchParams:
               Contacts chez <b>{p.company}</b> · <Link href="/applications?tab=contacts" className="underline">voir tous les contacts</Link>
             </p>
           )}
-          <div className="overflow-x-auto rounded-xl border bg-white">
+          {/* Téléphone : cartes ; écran large : tableau */}
+          <ul className="divide-y rounded-xl border bg-white sm:hidden">
+            {contactViews.map(c => <ContactCard key={c.id} c={c} />)}
+            {contactViews.length === 0 && <li className="p-4 text-sm text-gray-500">Aucun contact pour l&apos;instant.</li>}
+          </ul>
+          <div className="hidden overflow-x-auto rounded-xl border bg-white sm:block">
             <table className="w-full text-left text-sm">
               <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                 <tr><th className="px-2 py-2">Entreprise</th><th className="px-2">Nom</th><th className="px-2">Rôle</th><th className="px-2">E-mail</th><th className="px-2">LinkedIn</th><th className="px-2">Notes</th><th /></tr>

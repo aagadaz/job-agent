@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 
@@ -9,6 +9,23 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'sw
 export const metadata: Metadata = {
   title: 'job-agent',
   description: "Veille d'offres d'emploi notées par Claude",
+  // iPhone : « Partager → Sur l'écran d'accueil » ouvre l'application en plein écran, sans la
+  // barre de Safari, avec ce nom sous l'icône (app/apple-icon.tsx).
+  appleWebApp: { capable: true, title: 'Job Agent', statusBarStyle: 'default' },
+  formatDetection: { telephone: false }, // pas de numéros « cliquables » inventés dans les offres
+};
+
+// viewport-fit=cover : la page s'étend sous l'encoche / la Dynamic Island et la barre d'accueil
+// de l'iPhone ; les marges de sécurité (env(safe-area-inset-*)) sont gérées dans le CSS.
+// Pas de maximumScale : le zoom à deux doigts reste possible (accessibilité).
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#17181b' },
+  ],
 };
 
 // Exécuté AVANT l'affichage : pose le thème tout de suite, sinon la page apparaîtrait

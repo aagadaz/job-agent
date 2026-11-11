@@ -15,7 +15,7 @@ export function ClosedButton({ offerId, closed }: { offerId: string; closed: boo
       disabled={pending}
       onClick={() => startTransition(() => reportClosed(offerId, !closed))}
       title={closed ? 'Annuler le signalement' : "L'annonce n'est plus disponible chez l'employeur"}
-      className={`text-xs hover:underline disabled:opacity-50 ${closed ? 'text-blue-700' : 'text-gray-500 hover:text-amber-700'}`}
+      className={`py-1.5 text-xs hover:underline sm:py-0 disabled:opacity-50 ${closed ? 'text-blue-700' : 'text-gray-500 hover:text-amber-700'}`}
     >
       {pending ? '…' : closed ? 'Toujours ouverte ?' : 'Offre fermée'}
     </button>

@@ -285,7 +285,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
         <BulkOffersBar dismissed={dismissed} />
         <ul className="space-y-3">
           {rows.map(o => (
-            <li key={o.offerId} className={`rounded-xl border bg-white p-4 ${o.rejected ? 'opacity-60' : ''}`}>
+            <li key={o.offerId} className={`rounded-xl border bg-white p-3 sm:p-4 ${o.rejected ? 'opacity-60' : ''}`}>
               <div className="flex flex-wrap items-start gap-3">
                 <input
                   type="checkbox" name="ids" value={o.offerId} form={BULK_FORM_ID}
@@ -300,7 +300,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                   <Link href={`/offers/${o.offerId}`} className="font-medium hover:underline">
                     {o.title}
                   </Link>
-                  <a href={o.url} target="_blank" rel="noopener noreferrer" title="Annonce originale" className="ml-2 text-sm text-gray-400 hover:text-gray-700">
+                  <a href={o.url} target="_blank" rel="noopener noreferrer" title="Annonce originale" aria-label="Annonce originale" className="ml-1 inline-block px-1 py-0.5 text-sm text-gray-400 hover:text-gray-700">
                     ↗
                   </a>
                   {REDIRECTING_SOURCES.has(o.source) && (
@@ -337,10 +337,14 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                     ))}
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                {/* Téléphone : actions sur leur propre ligne, sous l'offre (w-full force le retour à la
+                    ligne). Écran large : colonne à droite, comme avant. */}
+                <div className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3 sm:w-auto sm:flex-col sm:items-end sm:border-0 sm:pt-0">
                   <StatusSelect offerId={o.offerId} status={o.status} />
-                  {!dismissed && <ClosedButton offerId={o.offerId} closed={o.closedAt !== null} />}
-                  <DismissButton offerId={o.offerId} dismissed={dismissed} />
+                  <div className="flex items-center gap-3 sm:flex-col sm:items-end sm:gap-2">
+                    {!dismissed && <ClosedButton offerId={o.offerId} closed={o.closedAt !== null} />}
+                    <DismissButton offerId={o.offerId} dismissed={dismissed} />
+                  </div>
                 </div>
               </div>
             </li>

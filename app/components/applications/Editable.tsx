@@ -32,7 +32,9 @@ export function EditText({ value, save, placeholder, multiline, className = '' }
     onBlur: () => { if (current !== value) run(current); },
     className: `${base} ${error ? 'border-red-400' : ''} ${pending ? 'opacity-60' : ''} ${className}`,
   };
-  return multiline ? <textarea rows={1} {...props} /> : <input {...props} />;
+  // field-sizing: content : la zone de texte grandit avec son contenu (Safari 26, Chrome 123+) ;
+  // ailleurs, elle garde une ligne et se redimensionne à la main.
+  return multiline ? <textarea rows={1} {...props} className={`${props.className} resize-y [field-sizing:content]`} /> : <input {...props} />;
 }
 
 export function EditSelect({ value, options, save, tone }: { value: string; options: { value: string; label: string }[]; save: Save; tone?: (v: string) => string }) {

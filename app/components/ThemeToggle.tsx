@@ -47,7 +47,7 @@ export function ThemeToggle() {
           : <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />}
       </svg>
       {/* Libellé visible : une icône seule ne se devine pas. Il annonce l'action, pas l'état. */}
-      <span className="hidden sm:inline">Mode {target}</span>
+      <span className="hidden lg:inline">Mode {target}</span>
     </button>
   );
 }
