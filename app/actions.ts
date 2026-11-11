@@ -9,7 +9,7 @@ import {
 } from '@/db/dashboard';
 import { decrypt, encrypt, maskSecret } from '@/lib/crypto';
 import { generateCoverLetter } from '@/lib/cover-letter';
-import { extractPdfText } from '@/lib/cv-analyzer';
+import { getCvText } from '@/db/cvs';
 import { requireUserId } from '@/lib/session';
 import { NO_SEARCH_MESSAGE, searchMode } from '@/lib/search-mode';
 import { dispatchSearch, isGithubConfigured } from '@/lib/github';
@@ -60,10 +60,7 @@ const ProfileSchema = z.object({
     .trim()
     .transform(s => (s === '' ? null : Number(s)))
     .pipe(z.number().int('Nombre d\u2019années entier attendu').min(0).max(30).nullable()),
-  cvText: z.string().optional(),
 });
-
-const MAX_PDF_BYTES = 5 * 1024 * 1024;
 
 export async function updateProfile(_prev: ActionResult | null, form: FormData): Promise<ActionResult> {
   const userId = await requireUserId();
@@ -77,28 +74,15 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     maxExperienceYears: form.get('maxExperienceYears') ?? '',
     // Case à cocher : présente dans le formulaire SEULEMENT si cochée (valeur "on")
     useAdzuna: form.get('useAdzuna') === 'on',
-    cvText: (form.get('cvText') as string | null) || undefined,
   });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
 
-  let cvText = parsed.data.cvText?.trim() || undefined;
-  const file = form.get('cvFile');
-  if (file instanceof File && file.size > 0) {
-    if (file.type !== 'application/pdf') return { ok: false, message: 'Le CV doit être un PDF.' };
-    if (file.size > MAX_PDF_BYTES) return { ok: false, message: 'PDF trop lourd (5 Mo maximum).' };
-    try {
-      cvText = (await extractPdfText(new Uint8Array(await file.arrayBuffer()))).trim();
-    } catch {
-      return { ok: false, message: 'Impossible de lire ce PDF : colle plutôt le texte du CV.' };
-    }
-    if (!cvText) return { ok: false, message: "Ce PDF ne contient pas de texte (scan ?) : colle le texte du CV." };
-  }
-
+  // Le CV se gère dans la bibliothèque (cv-actions.ts) : le profil n'y touche plus
   // Le profil doit permettre AU MOINS un mode de recherche (cf. search-mode.ts)
   const current = await getUserWithProfile(userId);
   const mode = searchMode({
     hasKey: !!current?.user.anthropicKeyEncrypted,
-    hasCv: !!(cvText ?? current?.profile?.cvText),
+    hasCv: !!current?.profile?.cvText,
     keywords: parsed.data.keywords,
   });
   if (!mode) return { ok: false, message: 'Sans clé Claude, indique au moins un mot-clé : ils ne peuvent pas être déduits du CV.' };
@@ -108,7 +92,7 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     return { ok: false, message: 'Sans Adzuna, ajoute d\u2019abord des entreprises (onglet Entreprises) : sinon la recherche ne trouvera rien.' };
   }
 
-  await saveProfile(userId, { ...parsed.data, cvText });
+  await saveProfile(userId, parsed.data);
   // Application IMMÉDIATE des réglages au fil existant (Adzuna désactivé, limite d'expérience
   // modifiée) : même fonction que le worker, donc exactement les mêmes règles. Pas besoin
   // d'attendre la prochaine recherche.
@@ -385,15 +369,18 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
 const MAX_LETTER_CHARS = 5_000;
 
 /** Génère (ou régénère) la lettre de motivation d'une offre avec la clé Claude de l'utilisateur. */
-export async function createCoverLetter(offerId: string, note = ''): Promise<ActionResult & { letter: string }> {
+export async function createCoverLetter(offerId: string, note = '', cvId?: string): Promise<ActionResult & { letter: string }> {
   const userId = await requireUserId();
   const id = z.string().uuid().safeParse(offerId);
   if (!id.success) return { ok: false, message: 'Offre invalide.', letter: '' };
+  const chosen = cvId ? z.string().uuid().safeParse(cvId) : null;
+  if (chosen && !chosen.success) return { ok: false, message: 'CV invalide.', letter: '' };
 
   const [account, offer] = await Promise.all([getUserWithProfile(userId), getOfferDetail(userId, id.data)]);
   if (!offer) return { ok: false, message: 'Offre introuvable.', letter: '' };
   const encryptedKey = account?.user.anthropicKeyEncrypted;
-  const cvText = account?.profile?.cvText;
+  // CV choisi pour cette lettre (bibliothèque, seulement les siens), sinon celui qui note les offres
+  const cvText = chosen?.success ? await getCvText(userId, chosen.data) : account?.profile?.cvText;
   if (!encryptedKey || !cvText) return { ok: false, message: 'Ajoute ta clé Claude et ton CV dans Profil.', letter: '' };
 
   let letter: string;

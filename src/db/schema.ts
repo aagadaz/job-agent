@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, uuid, text, integer, boolean, timestamp, jsonb, date,
+  pgTable, pgEnum, uuid, text, integer, boolean, timestamp, jsonb, date, customType, type AnyPgColumn,
   primaryKey, unique, index,
 } from 'drizzle-orm/pg-core';
 import type { SearchArea } from '../lib/countries';
@@ -38,7 +38,10 @@ export const profiles = pgTable('profiles', {
   maxExperienceYears: integer('max_experience_years').default(5),
   // Recherche Adzuna (agrégateur) activée ? false = pages carrières uniquement
   useAdzuna: boolean('use_adzuna').notNull().default(true),
+  // Texte du CV utilisé pour la notation, les mots-clés et (par défaut) les lettres : copie du
+  // texte du CV actif de la bibliothèque (table cvs). Le worker ne lit que ce champ.
   cvText: text('cv_text'),
+  activeCvId: uuid('active_cv_id').references((): AnyPgColumn => cvs.id, { onDelete: 'set null' }),
   sheetId: text('sheet_id'), // Google Sheet de suivi des candidatures (facultatif)
   // Onglet choisi (le #gid=… de l'URL). null = onglet « Candidatures » géré par l'application
   sheetGid: integer('sheet_gid'),
@@ -211,3 +214,22 @@ export const contacts = pgTable('contacts', {
   notes: text('notes').notNull().default(''), // ex. « Alumni ESEO », « rencontré au salon »
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('contacts_user_idx').on(t.userId)]);
+
+// ─── Bibliothèque de CV (onglet Profil → « Mes CV ») ───
+// Plusieurs CV par utilisateur (français / anglais, data / produit…). Le PDF d'origine est
+// gardé pour être retéléchargé ; le texte extrait sert à Claude. Un seul CV est « actif » à la
+// fois (profiles.active_cv_id) : c'est lui qui note les offres. Données personnelles :
+// supprimées avec le compte (cascade).
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
+
+export const cvs = pgTable('cvs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),                 // « CV data FR », « CV anglais »…
+  fileName: text('file_name'),                  // null = CV collé en texte, sans fichier
+  fileData: bytea('file_data'),
+  fileSize: integer('file_size'),
+  text: text('text').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('cvs_user_idx').on(t.userId)]);

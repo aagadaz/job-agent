@@ -38,7 +38,7 @@ export default function PrivacyPage() {
       <Section title="Quelles données collectons-nous ?">
         <ul className="list-disc space-y-1 pl-5">
           <li><b>Compte</b> : ton adresse e-mail, et ton nom s&apos;il est transmis par Google lors de la connexion. Si tu te connectes par lien e-mail, une empreinte (hachage SHA-256) du lien (jamais le lien lui-même) est conservée 15 minutes au plus.</li>
-          <li><b>CV</b> : le <b>texte</b> extrait de ton CV. Le fichier PDF lui-même n&apos;est pas conservé.</li>
+          <li><b>CV</b> : les CV que tu ajoutes dans ta bibliothèque (Profil → Mes CV) : leur <b>texte</b> extrait et, si tu as envoyé un PDF, le <b>fichier</b> lui-même, pour que tu puisses le retélécharger. Tu peux supprimer chaque CV à tout moment.</li>
           <li><b>Préférences de recherche</b> : mots-clés, zones (pays, villes), filtres, seuil de notation, entreprises suivies.</li>
           <li><b>Clé API Claude</b> : stockée <b>chiffrée</b> (AES-256-GCM) ; elle n&apos;est jamais réaffichée en clair.</li>
           <li><b>Suivi des candidatures et contacts</b> : les candidatures et les contacts (nom, rôle, coordonnées professionnelles) que tu saisis toi-même. Ils ne sont visibles que par toi et supprimés avec ton compte.</li>

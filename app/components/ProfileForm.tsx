@@ -13,8 +13,6 @@ export interface ProfileFormValues {
   rejectThreshold: number;
   maxExperienceYears: number | null;
   useAdzuna: boolean;
-  cvText: string; // texte du CV tel que lu (PDF extrait ou collé) : montré pour vérification
-  hasKey: boolean;
 }
 
 const input = 'mt-1 w-full rounded-md border px-3 py-2 text-sm';
@@ -60,35 +58,6 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
           </span>
         </span>
       </label>
-      <fieldset className="min-w-0 rounded-md border p-3 sm:p-4">
-        <legend className="px-1 text-sm font-medium">CV</legend>
-        {initial.cvText ? (
-          <details className="text-sm text-gray-600">
-            <summary className="cursor-pointer">
-              CV enregistré ({initial.cvText.length.toLocaleString('fr-FR')} caractères) : voir le texte lu
-            </summary>
-            <p className="mt-2 text-xs text-gray-500">
-              C&apos;est ce texte que Claude lit pour noter les offres et rédiger les lettres. S&apos;il est vide, coupé
-              ou dans le désordre (PDF en colonnes), colle plutôt le texte du CV ci-dessous.
-            </p>
-            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-md border bg-gray-50 p-3 text-xs text-gray-800">{initial.cvText}</pre>
-          </details>
-        ) : (
-          <p className="text-sm text-gray-600">
-            {initial.hasKey
-              ? 'Aucun CV enregistré : ajoute-le pour que les offres soient notées.'
-              : 'Aucun CV enregistré. Facultatif sans clé Claude : tes mots-clés suffisent pour recevoir des offres (non notées).'}
-          </p>
-        )}
-        <label className="mt-3 block text-sm">
-          Remplacer par un PDF
-          <input name="cvFile" type="file" accept="application/pdf" className="mt-1 block text-sm" />
-        </label>
-        <label className="mt-3 block text-sm">
-          …ou coller le texte du CV
-          <textarea name="cvText" rows={4} className={input} />
-        </label>
-      </fieldset>
       <button disabled={pending} className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 sm:w-auto sm:py-2">
         {pending ? 'Enregistrement…' : 'Enregistrer le profil'}
       </button>

@@ -7,7 +7,11 @@ import { createCoverLetter, saveCoverLetter } from '../actions';
  * Lettre de motivation : générée par Claude, puis ÉDITABLE (c'est un brouillon, pas un
  * produit fini). Le texte est enregistré, on le retrouve en revenant sur l'offre.
  */
-export function CoverLetterPanel({ offerId, initial, canGenerate }: { offerId: string; initial: string | null; canGenerate: boolean }) {
+export interface LetterCv { id: string; name: string; active: boolean }
+
+export function CoverLetterPanel({ offerId, initial, canGenerate, cvs = [] }: { offerId: string; initial: string | null; canGenerate: boolean; cvs?: LetterCv[] }) {
+  // CV utilisé pour la lettre : celui qui note les offres par défaut, modifiable (FR / EN…)
+  const [cvId, setCvId] = useState(cvs.find(c => c.active)?.id ?? cvs[0]?.id ?? '');
   const [text, setText] = useState(initial ?? '');
   const [saved, setSaved] = useState(initial ?? '');
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -18,7 +22,7 @@ export function CoverLetterPanel({ offerId, initial, canGenerate }: { offerId: s
   const generate = () =>
     startTransition(async () => {
       setMessage(null);
-      const res = await createCoverLetter(offerId, note);
+      const res = await createCoverLetter(offerId, note, cvId || undefined);
       if (res.ok) { setText(res.letter); setSaved(res.letter); }
       setMessage({ ok: res.ok, text: res.message });
     });
@@ -38,7 +42,7 @@ export function CoverLetterPanel({ offerId, initial, canGenerate }: { offerId: s
   if (!canGenerate && !initial) {
     return (
       <p className="text-sm text-gray-600">
-        Ajoute ta clé Claude et ton CV dans <a href="/profile" className="underline">Profil</a> pour générer une lettre adaptée à cette offre.
+        Ajoute ta clé Claude et ton CV dans <a href="/profile#cv" className="underline">Profil</a> pour générer une lettre adaptée à cette offre.
       </p>
     );
   }
@@ -74,6 +78,14 @@ export function CoverLetterPanel({ offerId, initial, canGenerate }: { offerId: s
             placeholder="Ex. : j'utilise leur appli tous les jours ; je veux travailler sur des modèles en production plutôt qu'en R&D…"
             className="mt-1 w-full rounded-md border p-2 text-sm"
           />
+        </label>
+      )}
+      {canGenerate && cvs.length > 1 && (
+        <label className="block text-sm">
+          <span className="font-medium">CV utilisé</span>
+          <select value={cvId} onChange={e => setCvId(e.target.value)} className="mt-1 block w-full rounded-md border px-2 py-2 text-sm sm:w-auto">
+            {cvs.map(c => <option key={c.id} value={c.id}>{c.name}{c.active ? ' (notation)' : ''}</option>)}
+          </select>
         </label>
       )}
       <div className="flex flex-wrap gap-2">
