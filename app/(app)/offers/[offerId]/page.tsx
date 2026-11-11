@@ -6,6 +6,7 @@ import { DismissButton } from '../../../components/DismissButton';
 import { ClosedButton } from '../../../components/ClosedButton';
 import { StatusSelect } from '../../../components/StatusSelect';
 import { getOfferDetail, getUserWithProfile } from '@/db/dashboard';
+import { listCvs } from '@/db/cvs';
 import { CoverLetterPanel } from '../../../components/CoverLetterPanel';
 import { countryLabel } from '@/lib/countries';
 import { REDIRECTING_SOURCES, offerSearchLinks } from '@/lib/search-links';
@@ -28,7 +29,7 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
   if (!z.string().uuid().safeParse(offerId).success) notFound();
   // Requête filtrée par userId : une offre d'un autre utilisateur donne la même 404 qu'une
   // offre inexistante (on ne révèle même pas qu'elle existe)
-  const [offer, account] = await Promise.all([getOfferDetail(userId, offerId), getUserWithProfile(userId)]);
+  const [offer, account, cvs] = await Promise.all([getOfferDetail(userId, offerId), getUserWithProfile(userId), listCvs(userId)]);
   if (!offer) notFound();
   const canGenerate = !!account?.user.anthropicKeyEncrypted && !!account?.profile?.cvText;
 
@@ -92,7 +93,10 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
 
       <section className="rounded-xl border bg-white p-4 sm:p-6">
         <h2 className="mb-2 font-semibold">Lettre de motivation</h2>
-        <CoverLetterPanel offerId={offer.offerId} initial={offer.coverLetter} canGenerate={canGenerate} />
+        <CoverLetterPanel
+          offerId={offer.offerId} initial={offer.coverLetter} canGenerate={canGenerate}
+          cvs={cvs.map(c => ({ id: c.id, name: c.name, active: !!c.active }))}
+        />
       </section>
 
       <section className="rounded-xl border bg-white p-4 sm:p-6">

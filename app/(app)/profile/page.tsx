@@ -1,5 +1,7 @@
 import { ApiKeyForm } from '../../components/ApiKeyForm';
 import { ProfileForm } from '../../components/ProfileForm';
+import { CvLibrary } from '../../components/CvLibrary';
+import { MAX_CVS, listCvs } from '@/db/cvs';
 import { SheetForm } from '../../components/SheetForm';
 import { getUserWithProfile } from '@/db/dashboard';
 import { decrypt, maskSecret } from '@/lib/crypto';
@@ -8,7 +10,7 @@ import { requireUserId } from '@/lib/session';
 
 export default async function ProfilePage() {
   const userId = await requireUserId();
-  const row = await getUserWithProfile(userId);
+  const [row, cvs] = await Promise.all([getUserWithProfile(userId), listCvs(userId)]);
   const profile = row?.profile;
 
   // On ne renvoie JAMAIS la clé au navigateur : seulement sa version masquée
@@ -23,8 +25,20 @@ export default async function ProfilePage() {
 
   return (
     <div className="grid gap-4 sm:gap-8 lg:grid-cols-[2fr_1fr] [&>*]:min-w-0">
-      <section className="rounded-xl border bg-white p-4 sm:p-6">
-        <h1 className="mb-4 text-lg font-semibold">Profil de recherche</h1>
+      {/* En premier : c'est ce qu'on vient le plus souvent changer ici. id="cv" : cible des liens « ajoute ton CV » */}
+      <section id="cv" className="h-fit scroll-mt-20 rounded-xl border bg-white p-4 sm:p-6">
+        <h1 className="mb-1 text-lg font-semibold">Mes CV</h1>
+        <p className="mb-4 text-sm text-gray-600">
+          Garde ici tes différentes versions (français, anglais, par type de poste). Celle marquée « Utilisé pour la
+          notation » note les offres ; pour chaque lettre de motivation, tu choisis le CV à utiliser.
+        </p>
+        <CvLibrary
+          max={MAX_CVS}
+          cvs={cvs.map(c => ({ ...c, createdAt: c.createdAt.toISOString(), active: !!c.active }))}
+        />
+      </section>
+      <section className="rounded-xl border bg-white p-4 sm:p-6 lg:col-start-1">
+        <h2 className="mb-4 text-lg font-semibold">Profil de recherche</h2>
         <ProfileForm
           initial={{
             keywords: profile?.keywords.join(', ') ?? '',
@@ -38,12 +52,10 @@ export default async function ProfilePage() {
             // undefined (pas encore de profil) → défaut 5 ; null (choisi) → pas de limite
             maxExperienceYears: profile === null || profile === undefined ? 5 : profile.maxExperienceYears,
             useAdzuna: profile?.useAdzuna ?? true,
-            cvText: profile?.cvText ?? '',
-            hasKey: !!row?.user.anthropicKeyEncrypted,
           }}
         />
       </section>
-      <section className="h-fit rounded-xl border bg-white p-4 sm:p-6">
+      <section className="h-fit rounded-xl border bg-white p-4 sm:p-6 lg:col-start-2 lg:row-start-1">
         <h2 className="mb-1 text-lg font-semibold">Clé API Claude</h2>
         <p className="mb-4 text-sm text-gray-600">
           <b>Facultative.</b> Sans clé, tu reçois quand même les offres correspondant à tes mots-clés, mais elles ne

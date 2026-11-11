@@ -106,7 +106,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
           {mode === 'unscored' ? (
             <>
               <b>Mode sans clé :</b> tu reçois les offres qui correspondent à tes mots-clés, triées par date, sans note.{' '}
-              <Link href="/profile" className="underline">Ajoute une clé Claude et ton CV</Link> pour que chaque offre soit notée selon ton profil.
+              <Link href="/profile#cv" className="underline">Ajoute une clé Claude et ton CV</Link> pour que chaque offre soit notée selon ton profil.
             </>
           ) : (
             <>
