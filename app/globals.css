@@ -53,3 +53,16 @@
   --color-blue-50: #121c2e;  --color-blue-100: #172440;  --color-blue-200: #22355c;
   --color-blue-600: #7aa7ff; --color-blue-700: #9bbcff;  --color-blue-800: #b8d0ff; --color-blue-900: #d3e2ff;
 }
+
+/* ─── Téléphones (iPhone en priorité) ─── */
+
+/* Safari iOS zoome sur un champ dont le texte fait moins de 16 px, et ne dézoome pas ensuite.
+   Sur écran tactile, les champs passent donc à 16 px (hors couche : prioritaire sur text-sm). */
+@media (pointer: coarse) {
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* Pas de surlignage gris au toucher sur iOS ; le retour visuel vient des styles :active */
+html { -webkit-tap-highlight-color: transparent; }

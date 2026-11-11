@@ -20,9 +20,9 @@ export function CompanyForm() {
           {pending ? 'Recherche…' : 'Ajouter'}
         </button>
       </div>
-      <p className="text-xs text-gray-500">
+      <p className="break-words text-xs text-gray-500">
         Sans URL, l&apos;identifiant est deviné sur Greenhouse, Lever, Ashby, Workable, Recruitee et SmartRecruiters.
-        Exemple Workday : https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+        Exemple Workday : <span className="break-all">https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite</span>
       </p>
       <ResultMessage result={result} />
     </form>

@@ -22,8 +22,8 @@ export default async function ProfilePage() {
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[2fr_1fr]">
-      <section className="rounded-xl border bg-white p-6">
+    <div className="grid gap-4 sm:gap-8 lg:grid-cols-[2fr_1fr] [&>*]:min-w-0">
+      <section className="rounded-xl border bg-white p-4 sm:p-6">
         <h1 className="mb-4 text-lg font-semibold">Profil de recherche</h1>
         <ProfileForm
           initial={{
@@ -43,7 +43,7 @@ export default async function ProfilePage() {
           }}
         />
       </section>
-      <section className="h-fit rounded-xl border bg-white p-6">
+      <section className="h-fit rounded-xl border bg-white p-4 sm:p-6">
         <h2 className="mb-1 text-lg font-semibold">Clé API Claude</h2>
         <p className="mb-4 text-sm text-gray-600">
           <b>Facultative.</b> Sans clé, tu reçois quand même les offres correspondant à tes mots-clés, mais elles ne
@@ -52,7 +52,7 @@ export default async function ProfilePage() {
         </p>
         <ApiKeyForm masked={masked} />
       </section>
-      <section className="h-fit rounded-xl border bg-white p-6 lg:col-start-2">
+      <section className="h-fit rounded-xl border bg-white p-4 sm:p-6 lg:col-start-2">
         <h2 className="mb-1 text-lg font-semibold">Google Sheet des candidatures</h2>
         <p className="mb-4 text-sm text-gray-600">
           Chaque candidature envoyée y est ajoutée, et chaque changement d’étape (depuis le fil ou l’onglet Candidatures) y est reporté, avec le vocabulaire de ton Sheet.

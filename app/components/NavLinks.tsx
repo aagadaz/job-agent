@@ -14,26 +14,66 @@ const ICONS: Record<string, React.ReactNode> = {
 
 export interface NavItem { href: string; label: string; icon: keyof typeof ICONS; badge?: number }
 
-/** Liens de navigation avec l'onglet actif mis en évidence (d'où le composant client : usePathname). */
-export function NavLinks({ items }: { items: NavItem[] }) {
+/**
+ * Liens de navigation avec l'onglet actif mis en évidence (d'où le composant client : usePathname).
+ * variant « bar » : en-tête (tablette et ordinateur) ; « tabbar » : barre d'onglets en bas d'écran
+ * sur téléphone, icône au-dessus du libellé, cibles de toucher larges.
+ */
+export function NavLinks({ items, variant = 'bar' }: { items: NavItem[]; variant?: 'bar' | 'tabbar' }) {
   const pathname = usePathname();
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const icon = (item: NavItem) => (
+    <svg width={variant === 'tabbar' ? 22 : 16} height={variant === 'tabbar' ? 22 : 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {ICONS[item.icon]}
+    </svg>
+  );
+  const badgeTitle = (n: number) => `${n} nouvelle(s) offre(s) depuis 24 h`;
+
+  if (variant === 'tabbar') {
+    return (
+      <ul className="flex">
+        {items.map(item => {
+          const active = isActive(item.href);
+          return (
+            <li key={item.href} className="flex-1">
+              <Link
+                href={item.href}
+                aria-current={active ? 'page' : undefined}
+                className={`relative flex min-h-12 flex-col items-center justify-center gap-0.5 pb-1 pt-1.5 text-[11px] ${active ? 'font-semibold text-gray-900' : 'text-gray-500'}`}
+              >
+                {icon(item)}
+                {item.label}
+                {!!item.badge && (
+                  <span className="absolute left-1/2 top-0.5 ml-2 rounded-full bg-blue-600 px-1.5 text-[10px] font-semibold leading-4 text-white" title={badgeTitle(item.badge)}>
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
   return (
     <>
       {items.map(item => {
-        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const active = isActive(item.href);
         return (
           <Link
             key={item.href}
             href={item.href}
             aria-current={active ? 'page' : undefined}
-            className={`flex items-center gap-2 rounded-md px-3 py-1.5 ${active ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'}`}
+            title={item.label}
+            className={`flex items-center gap-2 rounded-md px-2.5 py-1.5 lg:px-3 ${active ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'}`}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              {ICONS[item.icon]}
-            </svg>
-            <span className="hidden sm:inline">{item.label}</span>
+            {icon(item)}
+            {/* Libellé visible sur grand écran ; entre 640 et 1024 px (tablette, iPhone en paysage),
+                icônes seules pour que l'en-tête tienne, libellé gardé pour les lecteurs d'écran */}
+            <span className="sr-only lg:not-sr-only">{item.label}</span>
             {!!item.badge && (
-              <span className="rounded-full bg-blue-600 px-1.5 text-xs font-semibold leading-5 text-white" title={`${item.badge} nouvelle(s) offre(s) depuis 24 h`}>
+              <span className="rounded-full bg-blue-600 px-1.5 text-xs font-semibold leading-5 text-white" title={badgeTitle(item.badge)}>
                 {item.badge}
               </span>
             )}

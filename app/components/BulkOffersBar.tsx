@@ -33,7 +33,7 @@ export function BulkOffersBar({ dismissed }: { dismissed: boolean }) {
   };
 
   return (
-    <form id={BULK_FORM_ID} action={action} className="sticky top-12 z-[5] flex flex-wrap items-center gap-2 rounded-xl border bg-white/95 px-4 py-2 text-sm backdrop-blur">
+    <form id={BULK_FORM_ID} action={action} className="sticky top-[calc(3rem+1px+env(safe-area-inset-top))] z-[5] flex flex-wrap items-center gap-2 rounded-xl border bg-white/95 px-4 py-2 text-sm backdrop-blur">
       <label className="flex items-center gap-2">
         <input type="checkbox" className="size-4 accent-gray-900" checked={count > 0} onChange={e => toggleAll(e.target.checked)} aria-label="Tout cocher sur cette page" />
         {count > 0 ? `${count} sélectionnée${count > 1 ? 's' : ''}` : 'Tout cocher'}

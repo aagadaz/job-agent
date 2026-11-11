@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { changeStages, removeApplications } from '../../applications-actions';
 import { STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { ApplicationRow, type ApplicationView } from './ApplicationRow';
+import { ApplicationCard } from './ApplicationCard';
 import { useDragSelect } from './useDragSelect';
 
 // Tableau du suivi avec sélection multiple. La sélection est un état CLIENT (un Set d'id) :
@@ -49,7 +50,7 @@ export function ApplicationsTable({ rows, emptyMessage, categories }: { rows: (A
       {/* Barre d'actions hors du conteneur qui défile horizontalement : « sticky » ne colle qu'au
           plus proche ancêtre qui défile, elle reste ainsi visible sous l'en-tête de la page. */}
       {(n > 0 || message) && (
-        <div className="sticky top-[49px] z-20 flex flex-wrap items-center gap-3 rounded-t-xl border-b bg-gray-50 px-3 py-2 text-sm shadow-sm">
+        <div className="sticky top-[calc(3rem+1px+env(safe-area-inset-top))] z-[5] flex flex-wrap items-center gap-3 rounded-t-xl border-b bg-gray-50 px-3 py-2 text-sm shadow-sm">
           {n > 0 ? (
             <>
               <b>{n} sélectionnée{n > 1 ? 's' : ''}</b>
@@ -75,7 +76,7 @@ export function ApplicationsTable({ rows, emptyMessage, categories }: { rows: (A
                   </select>
                   <label className="inline-flex items-center gap-1 text-xs text-gray-600">
                     <input type="checkbox" checked={touchContact} onChange={e => setTouchContact(e.target.checked)} className="accent-gray-900" />
-                    Last contact = aujourd&apos;hui
+                    Dernier contact = aujourd&apos;hui
                   </label>
                   <button onClick={applyStage} disabled={!stage || pending} className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40">
                     {pending ? 'Mise à jour…' : 'Appliquer'}
@@ -93,10 +94,22 @@ export function ApplicationsTable({ rows, emptyMessage, categories }: { rows: (A
           )}
         </div>
       )}
-      <p className="px-3 pt-2 text-xs text-gray-400">
+      {/* Téléphone : une carte par candidature (un tableau à 10 colonnes ne tient pas en 390 px) */}
+      {rows.length > 0 && (
+        <div className="flex items-center gap-2 border-b px-3 py-2 text-sm sm:hidden">
+          <input type="checkbox" checked={allChecked} onChange={toggleAll} aria-label="Tout sélectionner" className="size-5 accent-gray-900" />
+          <span className="text-gray-500">Tout sélectionner</span>
+        </div>
+      )}
+      <ul className="divide-y sm:hidden">
+        {rows.map(a => (
+          <ApplicationCard key={a.id} a={a} contactsHref={a.contactsHref} selected={selected.has(a.id)} onToggle={() => onCheckboxChange(a.id)} categories={categories} />
+        ))}
+      </ul>
+      <p className="hidden px-3 pt-2 text-xs text-gray-400 sm:block">
         Astuce : clique et glisse sur les lignes pour en sélectionner plusieurs · Maj + clic pour une plage
       </p>
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto sm:block">
       <table className="w-full text-left text-sm">
         <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
           <tr>
@@ -105,7 +118,7 @@ export function ApplicationsTable({ rows, emptyMessage, categories }: { rows: (A
             </th>
             <th className="px-2 py-2">#</th><th className="px-2">Entreprise</th><th className="px-2">Type d&apos;entreprise</th>
             <th className="px-2">Poste (lien)</th><th className="px-2">Type</th><th className="px-2">Réponses</th>
-            <th className="px-2">Last contact</th><th className="px-2">Notes</th><th className="sticky right-0 border-l bg-gray-50 px-2"><span className="sr-only">Actions</span></th>
+            <th className="px-2">Dernier contact</th><th className="px-2">Notes</th><th className="sticky right-0 border-l bg-gray-50 px-2"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody onPointerDown={onPointerDown}>

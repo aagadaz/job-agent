@@ -39,19 +39,19 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
 
   return (
     <article className="space-y-6">
-      <Link href="/offers" className="text-sm text-gray-500 hover:underline">← Toutes les offres</Link>
+      <Link href="/offers" className="inline-block py-1.5 text-sm text-gray-500 hover:underline">← Toutes les offres</Link>
 
-      <header className="flex flex-wrap items-start gap-4 rounded-xl border bg-white p-6">
+      <header className="flex flex-wrap items-start gap-4 rounded-xl border bg-white p-4 sm:p-6">
         <ScoreBadge score={offer.score} large />
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold">{offer.title}</h1>
+          <h1 className="text-lg font-semibold sm:text-xl">{offer.title}</h1>
           <p className="text-sm text-gray-600">{meta}</p>
           {offer.salary && offer.salary !== 'Non précisé' && <p className="text-sm text-gray-600">Salaire : {offer.salary}</p>}
           <a
             href={offer.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 inline-block rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white"
+            className="mt-3 inline-block rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white sm:py-1.5"
           >
             Voir l&apos;annonce originale ↗
           </a>
@@ -67,15 +67,18 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
             </p>
           )}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        {/* Téléphone : actions sur leur propre ligne ; écran large : colonne à droite */}
+        <div className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3 sm:w-auto sm:flex-col sm:items-end sm:border-0 sm:pt-0">
           <StatusSelect offerId={offer.offerId} status={offer.status} />
-          <ClosedButton offerId={offer.offerId} closed={offer.closedAt !== null} />
-          <DismissButton offerId={offer.offerId} dismissed={offer.dismissedAt !== null} redirectTo="/offers" />
+          <div className="flex items-center gap-3 sm:flex-col sm:items-end sm:gap-2">
+            <ClosedButton offerId={offer.offerId} closed={offer.closedAt !== null} />
+            <DismissButton offerId={offer.offerId} dismissed={offer.dismissedAt !== null} redirectTo="/offers" />
+          </div>
         </div>
       </header>
 
       {(offer.justification || offer.strengths.length > 0 || offer.missingSkills.length > 0) && (
-        <section className="rounded-xl border bg-white p-6">
+        <section className="rounded-xl border bg-white p-4 sm:p-6">
           <h2 className="mb-2 font-semibold">
             Analyse de Claude{offer.verdict && ` · ${VERDICTS[offer.verdict]}`}
           </h2>
@@ -87,12 +90,12 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
         </section>
       )}
 
-      <section className="rounded-xl border bg-white p-6">
+      <section className="rounded-xl border bg-white p-4 sm:p-6">
         <h2 className="mb-2 font-semibold">Lettre de motivation</h2>
         <CoverLetterPanel offerId={offer.offerId} initial={offer.coverLetter} canGenerate={canGenerate} />
       </section>
 
-      <section className="rounded-xl border bg-white p-6">
+      <section className="rounded-xl border bg-white p-4 sm:p-6">
         <h2 className="mb-2 font-semibold">Description</h2>
         {excerpt && (
           <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -107,7 +110,7 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
       </section>
 
       {offer.qualifications && (
-        <section className="rounded-xl border bg-white p-6">
+        <section className="rounded-xl border bg-white p-4 sm:p-6">
           <h2 className="mb-2 font-semibold">Profil recherché</h2>
           <div className="whitespace-pre-line text-sm leading-relaxed text-gray-800">{offer.qualifications}</div>
         </section>

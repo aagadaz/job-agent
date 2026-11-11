@@ -14,7 +14,7 @@ export function ImportCompaniesForm() {
         Les colonnes suivantes sont ignorées. 300 lignes maximum.
       </p>
       <div className="flex flex-wrap items-center gap-3">
-        <input name="file" type="file" accept=".csv,.txt,text/csv,text/plain" required className="text-sm" />
+        <input name="file" type="file" accept=".csv,.txt,text/csv,text/plain" required className="w-full min-w-0 text-sm sm:w-auto" />
         <button disabled={pending} className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
           {pending ? 'Import en cours… (jusqu’à 1 min)' : 'Importer'}
         </button>

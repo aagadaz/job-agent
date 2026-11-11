@@ -15,13 +15,13 @@ export function AddContactForm({ defaultCompany = '' }: { defaultCompany?: strin
   useEffect(() => { if (result?.ok) form.current?.reset(); }, [result]);
   return (
     <form ref={form} action={action} className="flex flex-wrap items-end gap-2">
-      <input name="company" required defaultValue={defaultCompany} placeholder="Entreprise" className={`${input} w-44`} />
-      <input name="name" required placeholder="Nom" className={`${input} w-40`} />
-      <input name="role" placeholder="Rôle (recruteuse, manager…)" className={`${input} w-48`} />
-      <input name="email" type="email" placeholder="E-mail" className={`${input} w-48`} />
-      <input name="linkedin" type="url" placeholder="Profil LinkedIn" className={`${input} w-48`} />
-      <input name="notes" placeholder="Notes (Alumni ESEO…)" className={`${input} w-48`} />
-      <button disabled={pending} className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+      <input name="company" required defaultValue={defaultCompany} placeholder="Entreprise" className={`${input} w-full sm:w-44`} />
+      <input name="name" required placeholder="Nom" className={`${input} w-full sm:w-40`} />
+      <input name="role" placeholder="Rôle (recruteuse, manager…)" className={`${input} w-full sm:w-48`} />
+      <input name="email" type="email" placeholder="E-mail" className={`${input} w-full sm:w-48`} />
+      <input name="linkedin" type="url" placeholder="Profil LinkedIn" className={`${input} w-full sm:w-48`} />
+      <input name="notes" placeholder="Notes (Alumni ESEO…)" className={`${input} w-full sm:w-48`} />
+      <button disabled={pending} className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 sm:w-auto sm:py-1.5">
         {pending ? 'Ajout…' : 'Ajouter le contact'}
       </button>
       <ResultMessage result={result} />
@@ -50,8 +50,36 @@ export function ContactRow({ c }: { c: ContactView }) {
       </td>
       <td className="min-w-48 px-1 py-1"><EditText value={c.notes} save={save('notes')} placeholder="Notes…" multiline /></td>
       <td className="px-2 py-2 text-right">
-        <button onClick={() => startDelete(() => removeContact(c.id))} className="text-xs text-gray-400 hover:text-red-600" title="Supprimer">✕</button>
+        <button onClick={() => startDelete(() => removeContact(c.id))} className="p-1 text-xs text-gray-400 hover:text-red-600" title="Supprimer" aria-label={`Supprimer le contact ${c.name}`}>✕</button>
       </td>
     </tr>
+  );
+}
+
+/** Version téléphone d'une ligne du tableau des contacts : mêmes champs, empilés. */
+export function ContactCard({ c }: { c: ContactView }) {
+  const [deleting, startDelete] = useTransition();
+  const save = (field: string) => (value: string) => editContact(c.id, field, value);
+  return (
+    <li className={`space-y-1 p-3 ${deleting ? 'opacity-40' : ''}`}>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <EditText value={c.name} save={save('name')} className="font-semibold" />
+          <EditText value={c.role} save={save('role')} placeholder="Rôle" className="text-gray-700" />
+          <EditText value={c.company} save={save('company')} className="text-gray-700" />
+          {c.applications > 0 && <p className="px-1.5 text-xs text-gray-500">{c.applications} candidature{c.applications > 1 ? 's' : ''} chez cette entreprise</p>}
+        </div>
+        <button onClick={() => startDelete(() => removeContact(c.id))} className="p-2 text-sm text-gray-400" aria-label={`Supprimer le contact ${c.name}`}>✕</button>
+      </div>
+      <div className="flex items-center gap-1">
+        <EditText value={c.email} save={save('email')} placeholder="E-mail" />
+        {c.email && <a href={`mailto:${c.email}`} className="shrink-0 px-2 py-1.5 text-xs text-blue-700">Écrire</a>}
+      </div>
+      <div className="flex items-center gap-1">
+        <EditText value={c.linkedin} save={save('linkedin')} placeholder="https://linkedin.com/in/…" />
+        {c.linkedin && <a href={c.linkedin} target="_blank" rel="noopener noreferrer" className="shrink-0 px-2 py-1.5 text-xs text-blue-700">LinkedIn</a>}
+      </div>
+      <EditText value={c.notes} save={save('notes')} placeholder="Notes…" multiline />
+    </li>
   );
 }

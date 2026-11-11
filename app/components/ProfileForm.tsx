@@ -60,7 +60,7 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
           </span>
         </span>
       </label>
-      <fieldset className="rounded-md border p-4">
+      <fieldset className="min-w-0 rounded-md border p-3 sm:p-4">
         <legend className="px-1 text-sm font-medium">CV</legend>
         {initial.cvText ? (
           <details className="text-sm text-gray-600">
@@ -89,7 +89,7 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
           <textarea name="cvText" rows={4} className={input} />
         </label>
       </fieldset>
-      <button disabled={pending} className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+      <button disabled={pending} className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 sm:w-auto sm:py-2">
         {pending ? 'Enregistrement…' : 'Enregistrer le profil'}
       </button>
       <ResultMessage result={result} />
@@ -107,7 +107,7 @@ function AreasField({ initial }: { initial: SearchArea[] }) {
   const update = (i: number, patch: Partial<SearchArea>) => setAreas(a => a.map((x, j) => (j === i ? { ...x, ...patch } : x)));
 
   return (
-    <fieldset className="rounded-md border p-4">
+    <fieldset className="min-w-0 rounded-md border p-3 sm:p-4">
       <legend className="px-1 text-sm font-medium">Zones de recherche</legend>
       <p className="mb-3 text-xs text-gray-500">
         Un pays par ligne. La ville affine la recherche Adzuna ; vide = tout le pays. Pour les pages carrières,
@@ -130,7 +130,7 @@ function AreasField({ initial }: { initial: SearchArea[] }) {
               value={area.city}
               onChange={e => update(i, { city: e.target.value })}
               placeholder="Ville (facultatif)"
-              className="flex-1 rounded-md border px-3 py-2 text-sm"
+              className="min-w-0 flex-1 rounded-md border px-3 py-2 text-sm"
             />
             <button
               type="button"
@@ -145,7 +145,7 @@ function AreasField({ initial }: { initial: SearchArea[] }) {
         ))}
       </div>
       {areas.length < 6 && (
-        <button type="button" onClick={() => setAreas(a => [...a, { country: 'lu', city: '' }])} className="mt-2 text-sm text-blue-700 hover:underline">
+        <button type="button" onClick={() => setAreas(a => [...a, { country: 'lu', city: '' }])} className="mt-2 py-1.5 text-sm text-blue-700 hover:underline">
           + Ajouter un pays
         </button>
       )}

@@ -18,7 +18,7 @@ export function DismissButton({ offerId, dismissed, redirectTo }: { offerId: str
           if (redirectTo) router.push(redirectTo); // depuis la fiche : retour à la liste
         })
       }
-      className={`text-xs hover:underline disabled:opacity-50 ${dismissed ? 'text-blue-700' : 'text-gray-500 hover:text-red-600'}`}
+      className={`py-1.5 text-xs hover:underline sm:py-0 disabled:opacity-50 ${dismissed ? 'text-blue-700' : 'text-gray-500 hover:text-red-600'}`}
     >
       {pending ? '…' : dismissed ? 'Restaurer' : 'Supprimer du fil'}
     </button>

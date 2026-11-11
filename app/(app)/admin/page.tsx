@@ -16,7 +16,7 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border bg-white p-6">
+      <section className="rounded-xl border bg-white p-4 sm:p-6">
         <h1 className="mb-4 text-lg font-semibold">Administration · Réglages</h1>
         <SettingsForm initial={settings} userCount={users.length} />
       </section>
