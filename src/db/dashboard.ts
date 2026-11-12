@@ -13,6 +13,8 @@ import { DEFAULT_SORT, type SortSpec } from '../lib/offer-sort';
 // pas (cf. lib/status.ts). Toute requête du fil fait donc une jointure GAUCHE sur applications.
 const applicationOfOffer = and(eq(applications.userId, userOffers.userId), eq(applications.offerId, userOffers.offerId));
 const feedStatus = sql<FeedStatus>`coalesce(${applications.stage}::text, 'a_traiter')`;
+/** Statuts « pas encore postulé » : ceux que le fil montre par défaut. */
+export const NOT_APPLIED: FeedStatus[] = ['a_traiter', 'not_started'];
 
 // ─── Comptes ───
 /**
@@ -152,6 +154,9 @@ export async function countNewOffers(userId: string): Promise<number> {
       eq(userOffers.rejected, false),
       isNull(userOffers.dismissedAt),
       gte(userOffers.createdAt, sql`now() - interval '24 hours'`),
+      // Comme le fil : seulement les offres pas encore postulées
+      sql`not exists (select 1 from ${applications} where ${applications.userId} = ${userOffers.userId}
+        and ${applications.offerId} = ${userOffers.offerId} and ${applications.stage} <> 'not_started')`,
     ));
   return n;
 }
@@ -186,7 +191,13 @@ function feedConditions(userId: string, f: FeedFilters, omit?: Facet) {
   // probablement fermée, note sous le seuil…) ; le motif s'affiche sur la carte
   if (f.favorites) c.push(isNotNull(userOffers.favoriteAt));
   else if (!f.showRejected) c.push(eq(userOffers.rejected, false));
-  if (omit !== 'status' && f.statuses?.length) c.push(inArray(feedStatus, f.statuses));
+  if (omit !== 'status') {
+    if (f.statuses?.length) c.push(inArray(feedStatus, f.statuses));
+    // Par défaut, le fil = les offres auxquelles on n'a PAS encore postulé. Dès qu'une offre
+    // passe en « Envoyée », « En discussion »… elle vit dans l'onglet Candidatures. On la
+    // retrouve ici en cochant son statut dans les filtres. Favoris et corbeille : tout.
+    else if (!f.favorites && !f.dismissed) c.push(inArray(feedStatus, NOT_APPLIED));
+  }
   if (omit !== 'source' && f.sources?.length) c.push(inArray(offers.source, f.sources));
   if (omit !== 'country' && f.countries?.length) {
     const known = f.countries.filter(x => x !== 'none');
