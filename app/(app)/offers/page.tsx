@@ -131,6 +131,12 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
               </span>
             )}
           </h1>
+          {!dismissed && !favoritesView && !f.statuses?.length && (
+            <p className="text-sm text-gray-500">
+              Offres auxquelles tu n&apos;as pas encore postulé. Les autres sont dans{' '}
+              <Link href="/applications" className="underline">Candidatures</Link>.
+            </p>
+          )}
           {run && (
             <p className="text-sm text-gray-500">
               Dernière recherche : {run.startedAt.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })} ·{' '}
@@ -187,6 +193,9 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
 
           <fieldset>
             <legend className="mb-1 font-medium">Statut</legend>
+            {!dismissed && !favoritesView && (
+              <p className="mb-1 text-xs text-gray-500">Aucune case cochée : « À traiter » et « À postuler ».</p>
+            )}
             {options(facets.status, f.statuses).map(o => (
               <label key={o.value} className="flex items-center gap-2 py-0.5">
                 <input type="checkbox" name="status" value={o.value} defaultChecked={f.statuses?.includes(o.value as never)} />
