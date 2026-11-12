@@ -122,6 +122,8 @@ export const userOffers = pgTable('user_offers', {
   // Suppression LOGIQUE : la ligne reste (le worker sait que l'offre est déjà vue et ne la
   // re-note pas), elle est seulement masquée du fil. null = visible.
   dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+  // Mise en favori (étoile) : PERSONNELLE, comme tout le reste de cette table. null = pas favori.
+  favoriteAt: timestamp('favorite_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   primaryKey({ columns: [t.userId, t.offerId] }), // une ligne par (utilisateur, offre), pas plus

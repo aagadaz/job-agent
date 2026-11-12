@@ -7,7 +7,8 @@ import { ScoreBadge } from '../../components/ScoreBadge';
 import { DismissButton } from '../../components/DismissButton';
 import { ClosedButton } from '../../components/ClosedButton';
 import { StatusSelect } from '../../components/StatusSelect';
-import { PAGE_SIZE, countOffers, feedFacets, getUserWithProfile, listOffers } from '@/db/dashboard';
+import { PAGE_SIZE, countFavorites, countOffers, feedFacets, getUserWithProfile, listOffers } from '@/db/dashboard';
+import { FavoriteButton } from '../../components/FavoriteButton';
 import { DEFAULT_SORT, DIR_LABELS, SORT_KEYS, SORT_LABELS, cycleSort, isDefaultSort, serializeSort } from '@/lib/offer-sort';
 import { FEED_STATUS_LABELS } from '@/lib/status';
 import { classifyContract } from '@/lib/contracts';
@@ -41,11 +42,13 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
   const f: ParsedFilters = parseFilters(await searchParams);
   const { showRejected, sort } = f;
   const dismissed = !!f.dismissed; // vue « Corbeille »
+  const favoritesView = !!f.favorites; // vue « Favoris »
   const nActive = activeCount(f);
 
-  const [rows, total, facets, run, account] = await Promise.all([
+  const [rows, total, nFavorites, facets, run, account] = await Promise.all([
     listOffers(userId, f),
     countOffers(userId, f),
+    countFavorites(userId),
     feedFacets(userId, f),
     getReconciledLastRun(userId),
     getUserWithProfile(userId),
@@ -78,7 +81,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
     ...(f.sinceDays ? [{ label: SINCE_LABELS[f.sinceDays], href: href({ sinceDays: undefined }) }] : []),
     ...(showRejected && !dismissed ? [{ label: 'Écartées incluses', href: href({ showRejected: false }) }] : []),
   ];
-  const clearAll = filtersHref({ showRejected: false, dismissed, sort });
+  const clearAll = filtersHref({ showRejected: false, dismissed, favorites: favoritesView, sort });
 
   /** Valeurs proposées pour une famille : celles présentes dans le fil + celles déjà cochées. */
   const options = (facet: { value: string; n: number }[], selected: string[] = []) => [
@@ -121,7 +124,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">
-            {dismissed ? 'Corbeille' : 'Offres'} ({total})
+            {dismissed ? 'Corbeille' : favoritesView ? 'Favoris' : 'Offres'} ({total})
             {newCount > 0 && (
               <span className="ml-2 rounded-full bg-blue-600 px-2 py-0.5 align-middle text-xs font-medium text-white">
                 {newCount} nouvelle{newCount > 1 ? 's' : ''}
@@ -145,9 +148,20 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
           </div>
         </div>
         <nav className="flex gap-2 text-sm">
-          <Link href={filtersHref({ ...f, dismissed: !dismissed, showRejected: false })} className="rounded-md border bg-white px-3 py-1">
-            {dismissed ? '← Retour au fil' : 'Corbeille'}
-          </Link>
+          {!dismissed && (
+            <Link
+              href={filtersHref({ ...f, favorites: !favoritesView })}
+              aria-current={favoritesView ? 'true' : undefined}
+              className={`inline-flex items-center gap-1 rounded-md border px-3 py-1 ${favoritesView ? 'bg-gray-900 text-white' : 'bg-white'}`}
+            >
+              {favoritesView ? '← Tout le fil' : <><span className="text-amber-500" aria-hidden>★</span> Favoris ({nFavorites})</>}
+            </Link>
+          )}
+          {!favoritesView && (
+            <Link href={filtersHref({ ...f, dismissed: !dismissed, showRejected: false })} className="rounded-md border bg-white px-3 py-1">
+              {dismissed ? '← Retour au fil' : 'Corbeille'}
+            </Link>
+          )}
         </nav>
       </div>
 
@@ -160,6 +174,7 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
         <AutoSubmitForm className="grid gap-4 border-t px-4 py-4 text-sm md:grid-cols-2 lg:grid-cols-4">
           {!isDefaultSort(sort) && <input type="hidden" name="sort" value={serializeSort(sort)} />}
           {dismissed && <input type="hidden" name="dismissed" value="1" />}
+          {favoritesView && <input type="hidden" name="fav" value="1" />}
 
           <div className="md:col-span-2 lg:col-span-4 flex gap-2">
             <input
@@ -280,11 +295,13 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
             <>Aucune offre ne correspond à ces filtres. <Link href={clearAll} className="underline">Tout effacer</Link></>
           ) : dismissed
             ? 'La corbeille est vide.'
+            : favoritesView
+            ? 'Aucun favori pour l’instant. Touche l’étoile ☆ d’une offre pour la retrouver ici.'
             : "Aucune offre pour l'instant. Vérifie ton profil (CV et clé Claude) : la recherche tourne chaque matin à 7h17."}
         </p>
       ) : (
         <>
-        <BulkOffersBar dismissed={dismissed} />
+        <BulkOffersBar dismissed={dismissed} favoritesView={favoritesView} />
         <ul className="space-y-3">
           {rows.map(o => (
             <li key={o.offerId} className={`rounded-xl border bg-white p-3 sm:p-4 ${o.rejected ? 'opacity-60' : ''}`}>
@@ -341,6 +358,8 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                     ))}
                   </div>
                 </div>
+                {/* Étoile : à droite du titre (sur téléphone aussi, en haut de la carte) */}
+                {!dismissed && <FavoriteButton offerId={o.offerId} favorite={o.favorite} />}
                 {/* Téléphone : actions sur leur propre ligne, sous l'offre (w-full force le retour à la
                     ligne). Écran large : colonne à droite, comme avant. */}
                 <div className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3 sm:w-auto sm:flex-col sm:items-end sm:border-0 sm:pt-0">

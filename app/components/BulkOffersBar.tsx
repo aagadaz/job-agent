@@ -11,7 +11,7 @@ export const BULK_FORM_ID = 'bulk-offers';
 const boxes = () => document.querySelectorAll<HTMLInputElement>(`input[form="${BULK_FORM_ID}"][name="ids"]`);
 
 /** Barre d'actions groupées du fil : écarter, restaurer ou changer l'étape des offres cochées. */
-export function BulkOffersBar({ dismissed }: { dismissed: boolean }) {
+export function BulkOffersBar({ dismissed, favoritesView = false }: { dismissed: boolean; favoritesView?: boolean }) {
   const [result, action, pending] = useActionState(bulkOffers, null);
   const [count, setCount] = useState(0);
   const recount = () => setCount([...boxes()].filter(b => b.checked).length);
@@ -40,11 +40,14 @@ export function BulkOffersBar({ dismissed }: { dismissed: boolean }) {
       </label>
       {count > 0 && (
         <>
-          <select name="op" defaultValue={dismissed ? 'restore' : 'dismiss'} className="rounded-md border px-2 py-1">
+          <select name="op" defaultValue={dismissed ? 'restore' : favoritesView ? 'unfavorite' : 'favorite'} className="rounded-md border px-2 py-1">
             {dismissed ? (
               <option value="restore">Restaurer dans le fil</option>
             ) : (
               <>
+                {favoritesView
+                  ? <option value="unfavorite">Retirer des favoris</option>
+                  : <option value="favorite">Ajouter aux favoris</option>}
                 <option value="dismiss">Mettre à la corbeille</option>
                 {STAGE_KEYS.map(s => <option key={s} value={s}>Passer en « {STAGES[s].label} »</option>)}
               </>
