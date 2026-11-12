@@ -134,6 +134,13 @@
       "when": 1794394539317,
       "tag": "0018_contract_types",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794521022361,
+      "tag": "0019_favorites",
+      "breakpoints": true
     }
   ]
 }

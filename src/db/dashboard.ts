@@ -160,6 +160,7 @@ export async function countNewOffers(userId: string): Promise<number> {
 export interface FeedFilters {
   showRejected: boolean;
   dismissed?: boolean;           // vue Corbeille
+  favorites?: boolean;           // vue Favoris (étoile)
   statuses?: FeedStatus[];
   countries?: string[];          // 'none' = pays non déterminé
   sources?: string[];
@@ -181,7 +182,10 @@ function feedConditions(userId: string, f: FeedFilters, omit?: Facet) {
   const c = [eq(userOffers.userId, userId)];
   // Corbeille : seulement les supprimées ; sinon, jamais les supprimées
   c.push(f.dismissed ? isNotNull(userOffers.dismissedAt) : isNull(userOffers.dismissedAt));
-  if (!f.showRejected) c.push(eq(userOffers.rejected, false));
+  // Favoris : l'utilisateur les a gardés exprès, ils restent visibles même écartés (offre
+  // probablement fermée, note sous le seuil…) ; le motif s'affiche sur la carte
+  if (f.favorites) c.push(isNotNull(userOffers.favoriteAt));
+  else if (!f.showRejected) c.push(eq(userOffers.rejected, false));
   if (omit !== 'status' && f.statuses?.length) c.push(inArray(feedStatus, f.statuses));
   if (omit !== 'source' && f.sources?.length) c.push(inArray(offers.source, f.sources));
   if (omit !== 'country' && f.countries?.length) {
@@ -282,6 +286,7 @@ export async function listOffers(userId: string, opts: FeedFilters & { sort?: So
       status: feedStatus,
       rejected: userOffers.rejected,
       rejectReason: userOffers.rejectReason,
+      favorite: sql<boolean>`${userOffers.favoriteAt} is not null`,
       requiredYears: userOffers.requiredYears,
       closedAt: offers.closedAt,
       addedAt: userOffers.createdAt, // date d'arrivée de l'offre dans le fil de CET utilisateur
@@ -293,6 +298,26 @@ export async function listOffers(userId: string, opts: FeedFilters & { sort?: So
     .orderBy(...orderFor(opts.sort ?? DEFAULT_SORT))
     .limit(PAGE_SIZE)
     .offset(((opts.page ?? 1) - 1) * PAGE_SIZE);
+}
+
+/** Met (ou retire) des offres en favori — seulement les siennes. Renvoie le nombre modifié. */
+export async function setOffersFavorite(userId: string, offerIds: string[], favorite: boolean): Promise<number> {
+  if (offerIds.length === 0) return 0;
+  const rows = await db
+    .update(userOffers)
+    .set({ favoriteAt: favorite ? new Date() : null })
+    .where(and(eq(userOffers.userId, userId), inArray(userOffers.offerId, offerIds)))
+    .returning({ offerId: userOffers.offerId });
+  return rows.length;
+}
+
+/** Nombre de favoris visibles (hors corbeille) : pour le raccourci « Favoris (n) » du fil. */
+export async function countFavorites(userId: string): Promise<number> {
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(userOffers)
+    .where(and(eq(userOffers.userId, userId), isNotNull(userOffers.favoriteAt), isNull(userOffers.dismissedAt)));
+  return n;
 }
 
 /** Masque (dismissed = true) ou restaure des offres du fil — seulement les siennes. */
@@ -329,6 +354,7 @@ export async function getOfferDetail(userId: string, offerId: string) {
       missingSkills: userOffers.missingSkills,
       status: feedStatus,
       dismissedAt: userOffers.dismissedAt,
+      favorite: sql<boolean>`${userOffers.favoriteAt} is not null`,
       closedAt: offers.closedAt,
       coverLetter: userOffers.coverLetter,
     })

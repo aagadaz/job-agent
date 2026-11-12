@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { z } from 'zod';
 import {
-  createManualRun, deleteCompany, failRun, addCatalogCompanies, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOffersDismissed,
+  createManualRun, deleteCompany, failRun, addCatalogCompanies, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOffersDismissed, setOffersFavorite,
 } from '@/db/dashboard';
 import { decrypt, encrypt, maskSecret } from '@/lib/crypto';
 import { generateCoverLetter } from '@/lib/cover-letter';
@@ -226,6 +226,13 @@ export async function dismissOffer(offerId: string, dismissed: boolean): Promise
   revalidatePath('/offers');
 }
 
+/** Met une offre en favori (étoile), ou l'en retire. */
+export async function favoriteOffer(offerId: string, favorite: boolean): Promise<void> {
+  const userId = await requireUserId();
+  await setOffersFavorite(userId, [z.string().uuid().parse(offerId)], z.boolean().parse(favorite));
+  revalidatePath('/offers', 'layout'); // le fil et la fiche de l'offre
+}
+
 /** « Cette offre n'est plus disponible » (ou annulation si l'utilisateur s'est trompé). */
 export async function reportClosed(offerId: string, closed: boolean): Promise<void> {
   const userId = await requireUserId();
@@ -264,12 +271,18 @@ export async function bulkOffers(_prev: ActionResult | null, form: FormData): Pr
   const userId = await requireUserId();
   const parsed = z.object({
     ids: z.array(z.string().uuid()).min(1, 'Coche au moins une offre.').max(200),
-    op: z.union([z.enum(['dismiss', 'restore']), StageSchema]),
+    op: z.union([z.enum(['dismiss', 'restore', 'favorite', 'unfavorite']), StageSchema]),
   }).safeParse({ ids: form.getAll('ids').map(String), op: String(form.get('op') ?? '') });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
   const ids = [...new Set(parsed.data.ids)];
   const { op } = parsed.data;
   const plural = (n: number) => (n > 1 ? 's' : '');
+
+  if (op === 'favorite' || op === 'unfavorite') {
+    const n = await setOffersFavorite(userId, ids, op === 'favorite');
+    revalidatePath('/offers');
+    return { ok: true, message: `${n} offre${plural(n)} ${op === 'favorite' ? `ajoutée${plural(n)} aux` : `retirée${plural(n)} des`} favoris.` };
+  }
 
   if (op === 'dismiss' || op === 'restore') {
     const n = await setOffersDismissed(userId, ids, op === 'dismiss');

@@ -5,6 +5,7 @@ import { ScoreBadge } from '../../../components/ScoreBadge';
 import { DismissButton } from '../../../components/DismissButton';
 import { ClosedButton } from '../../../components/ClosedButton';
 import { StatusSelect } from '../../../components/StatusSelect';
+import { FavoriteButton } from '../../../components/FavoriteButton';
 import { getOfferDetail, getUserWithProfile } from '@/db/dashboard';
 import { listCvs } from '@/db/cvs';
 import { CoverLetterPanel } from '../../../components/CoverLetterPanel';
@@ -74,6 +75,7 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
         {/* Téléphone : actions sur leur propre ligne ; écran large : colonne à droite */}
         <div className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3 sm:w-auto sm:flex-col sm:items-end sm:border-0 sm:pt-0">
           <StatusSelect offerId={offer.offerId} status={offer.status} />
+          <FavoriteButton offerId={offer.offerId} favorite={offer.favorite} withLabel />
           <div className="flex items-center gap-3 sm:flex-col sm:items-end sm:gap-2">
             <ClosedButton offerId={offer.offerId} closed={offer.closedAt !== null} />
             <DismissButton offerId={offer.offerId} dismissed={offer.dismissedAt !== null} redirectTo="/offers" />
