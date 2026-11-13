@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useEffect, useRef, useState, useTransition } from 'react';
-import { activateCvAction, addCv, deleteCvAction, renameCvAction, type CvActionResult } from '../cv-actions';
+import { activateCvAction, addCv, deleteCvAction, renameCvAction, rescoreAction, type CvActionResult } from '../cv-actions';
 import { ResultMessage } from './ResultMessage';
 
 export interface CvView {
@@ -24,6 +24,7 @@ export function CvLibrary({ cvs, max }: { cvs: CvView[]; max: number }) {
           {cvs.map(cv => <CvItem key={cv.id} cv={cv} />)}
         </ul>
       )}
+      {cvs.some(c => c.active) && <RescoreButton />}
       {cvs.length < max ? <AddCvForm first={cvs.length === 0} /> : (
         <p className="text-sm text-gray-500">{max} CV maximum : supprime-en un pour en ajouter un autre.</p>
       )}
@@ -119,12 +120,40 @@ function AddCvForm({ first }: { first: boolean }) {
           …ou coller le texte du CV
           <textarea name="text" rows={4} className={`mt-1 ${input}`} />
         </label>
+        {!first && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" name="useForScoring" defaultChecked className="mt-0.5 size-4 accent-gray-900" />
+            <span>
+              Utiliser ce CV pour noter mes offres
+              <span className="block text-xs text-gray-500">Les offres de ton fil seront réanalysées avec ce CV (quelques minutes, sur ta clé Claude).</span>
+            </span>
+          </label>
+        )}
         <button disabled={pending} className="w-full rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 sm:w-auto sm:py-2">
           {pending ? 'Lecture du CV…' : 'Ajouter le CV'}
         </button>
-        {first && <p className="text-xs text-gray-500">Ton premier CV sera utilisé pour noter les offres ; tu pourras en changer à tout moment.</p>}
+        {first && <p className="text-xs text-gray-500">Ton premier CV sera utilisé pour noter les offres, et celles déjà dans ton fil seront analysées avec lui. Tu pourras en changer à tout moment.</p>}
         <ResultMessage result={result} />
       </form>
     </details>
+  );
+}
+
+/** Relance à la main la réanalyse des offres avec le CV de notation actuel. */
+function RescoreButton() {
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<CvActionResult | null>(null);
+  return (
+    <div className="text-sm">
+      <button
+        onClick={() => start(async () => setResult(await rescoreAction()))}
+        disabled={pending}
+        className="py-1 font-medium text-blue-700 hover:underline disabled:opacity-50"
+        title="Re-note les offres de ton fil avec le CV utilisé pour la notation"
+      >
+        {pending ? 'Lancement…' : '↻ Réanalyser mes offres avec ce CV'}
+      </button>
+      {result?.message && <ResultMessage result={result} />}
+    </div>
   );
 }

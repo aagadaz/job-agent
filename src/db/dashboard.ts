@@ -418,8 +418,9 @@ export async function setOfferClosed(userId: string, offerId: string, closed: bo
 
 // ─── Dernière exécution du worker ───
 /** Crée la ligne "runs" dès le clic : l'interface affiche « en cours » sans attendre GitHub. */
-export async function createManualRun(userId: string): Promise<string> {
-  const [run] = await db.insert(runs).values({ userId }).returning({ id: runs.id });
+export async function createManualRun(userId: string, kind: 'search' | 'rescore' = 'search'): Promise<string> {
+  // Réanalyse : marqueur dans stats dès la création, pour afficher « Réanalyse en cours… »
+  const [run] = await db.insert(runs).values({ userId, stats: kind === 'rescore' ? { rescore: 1 } : undefined }).returning({ id: runs.id });
   return run.id;
 }
 

@@ -357,7 +357,7 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
   }
   // Le délai ne s'applique qu'après une recherche RÉUSSIE : après un échec, on doit pouvoir
   // réessayer tout de suite une fois la cause corrigée.
-  if (previous?.status === 'success') {
+  if (previous?.status === 'success' && !previous.stats?.rescore) { // une réanalyse ne compte pas
     const age = Date.now() - previous.startedAt.getTime();
     if (age < COOLDOWN_MS) {
       return { ok: false, message: `Dernière recherche trop récente : réessaie dans ${Math.ceil((COOLDOWN_MS - age) / 60_000)} min.` };

@@ -6,6 +6,7 @@ import {
   touchOffers, reconcileFeed,
 } from './db/repository';
 import { decrypt } from './lib/crypto';
+import { rescoreUser } from './rescore';
 import { deriveKeywords } from './lib/cv-analyzer';
 import { dedupeAcrossSources } from './lib/dedupe';
 import { excludeByTitle, includeByTitle, keepInCountries } from './lib/prefilter';
@@ -176,6 +177,16 @@ async function main() {
   // déjà créée par l'interface au moment du clic. Lancement planifié : tout le monde.
   const onlyUserId = optionalUuid('ONLY_USER_ID');
   const presetRunId = optionalUuid('RUN_ID');
+
+  // Réanalyse (changement de CV de notation) : un seul utilisateur, aucune collecte
+  if (process.env.MODE === 'rescore') {
+    if (!onlyUserId || !presetRunId) throw new Error('MODE=rescore exige ONLY_USER_ID et RUN_ID');
+    console.log(`▶ réanalyse, utilisateur ${onlyUserId.slice(0, 8)}`);
+    const stats = await rescoreUser(onlyUserId); // une erreur est rattrapée plus bas (finishRun)
+    await finishRun(presetRunId, { status: 'success', stats });
+    console.log(`   ✅ ${stats.rescored} offres réanalysées (${stats.kept} retenues, ${stats.rejected} écartées)`);
+    return;
+  }
 
   const activeUsers = await getActiveUsers(onlyUserId);
   if (onlyUserId && activeUsers.length === 0) {

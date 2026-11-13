@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { db } from './client';
-import { users, profiles, offers, userOffers, runs, companies } from './schema';
+import { users, profiles, offers, userOffers, runs, companies, applications } from './schema';
 import type { JobDetail, ScoredOffer } from '../lib/types';
 import { normalizeUrl } from '../lib/url';
 import { requiredYears, tooMuchExperience } from '../lib/experience';
@@ -241,4 +241,60 @@ export async function reconcileFeed(userId: string, maxYears: number | null, dis
 
   const count = (reason: RejectReason) => groups.get(reason)?.length ?? 0;
   return { experience: count('experience'), contract: count('contract'), expired: count('expired'), restored: groups.get(null)?.length ?? 0 };
+}
+
+// ─── Réanalyse après un changement de CV de notation ───
+
+/**
+ * Offres à re-noter pour un utilisateur : celles encore « en jeu » dans son fil.
+ * - pas dans la corbeille, pas encore postulées (aucune candidature, ou « À postuler ») ;
+ * - retenues, ou écartées pour leur NOTE (un autre CV peut les faire remonter). Celles écartées
+ *   pour une autre raison (offre fermée, expérience, contrat, source) ne changeraient pas.
+ * Les plus récentes d'abord, dans la limite du plafond de notation par exécution.
+ */
+export async function getOffersToRescore(userId: string, limit: number) {
+  return db
+    .select({
+      offerId: offers.id, url: offers.url, source: offers.source, title: offers.title, company: offers.company,
+      location: offers.location, salary: offers.salary, employmentType: offers.employmentType,
+      datePosted: offers.datePosted, description: offers.description, qualifications: offers.qualifications,
+      country: offers.country,
+    })
+    .from(userOffers)
+    .innerJoin(offers, eq(offers.id, userOffers.offerId))
+    .where(and(
+      eq(userOffers.userId, userId),
+      isNull(userOffers.dismissedAt),
+      or(isNull(userOffers.rejectReason), eq(userOffers.rejectReason, 'score')),
+      sql`not exists (select 1 from ${applications} where ${applications.userId} = ${userOffers.userId}
+        and ${applications.offerId} = ${userOffers.offerId} and ${applications.stage} <> 'not_started')`,
+    ))
+    .orderBy(sql`${userOffers.createdAt} desc`)
+    .limit(limit);
+}
+
+const VERDICT_DB = { 'Postuler': 'postuler', 'À étudier': 'a_etudier', 'Ignorer': 'ignorer' } as const;
+
+/**
+ * Enregistre les nouvelles notes. Une notation échouée (scoring null) laisse l'ancienne note.
+ * Le seuil s'applique à nouveau : une offre peut passer d'écartée à retenue, et inversement.
+ */
+export async function saveRescores(userId: string, scored: (ScoredOffer & { offerId: string })[], rejectThreshold: number) {
+  let kept = 0;
+  let rejected = 0;
+  for (const o of scored) {
+    if (!o.scoring) continue;
+    const isRejected = o.scoring.score <= rejectThreshold;
+    isRejected ? rejected++ : kept++;
+    await db.update(userOffers).set({
+      score: o.scoring.score,
+      verdict: VERDICT_DB[o.scoring.verdict],
+      justification: o.scoring.justification,
+      strengths: o.scoring.strengths,
+      missingSkills: o.scoring.missingSkills,
+      rejected: isRejected,
+      rejectReason: isRejected ? 'score' : null,
+    }).where(and(eq(userOffers.userId, userId), eq(userOffers.offerId, o.offerId)));
+  }
+  return { kept, rejected };
 }
