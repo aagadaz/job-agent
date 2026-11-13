@@ -20,6 +20,10 @@ on:
         description: "UUID de la ligne runs créée par l'interface (facultatif)"
         required: false
         default: ''
+      mode:
+        description: "search = recherche d'offres ; rescore = réanalyse des offres avec le nouveau CV"
+        required: false
+        default: 'search'
 
 concurrency:
   # Une file par utilisateur pour les lancements manuels, une file "all" pour le cron :
@@ -87,3 +91,4 @@ jobs:
           # (sinon une valeur malveillante deviendrait une commande shell : injection)
           ONLY_USER_ID: ${{ inputs.user_id }}
           RUN_ID: ${{ inputs.run_id }}
+          MODE: ${{ inputs.mode }}

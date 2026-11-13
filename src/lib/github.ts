@@ -23,14 +23,17 @@ function headers(token: string) {
 /** Titre donné au run par `run-name` dans daily.yml : c'est notre clé de corrélation. */
 export const manualRunTitle = (runId: string) => `Recherche manuelle ${runId}`;
 
-/** Déclenche le workflow pour un utilisateur. Renvoie null si accepté, sinon la raison. */
-export async function dispatchSearch(userId: string, runId: string): Promise<string | null> {
+/**
+ * Déclenche le workflow pour un utilisateur. Renvoie null si accepté, sinon la raison.
+ * mode « rescore » : réanalyse des offres existantes avec le nouveau CV (pas de collecte).
+ */
+export async function dispatchSearch(userId: string, runId: string, mode: 'search' | 'rescore' = 'search'): Promise<string | null> {
   const cfg = config();
   if (!cfg) return 'GITHUB_DISPATCH_TOKEN / GITHUB_REPO non configurés';
   const res = await fetch(`${API}/repos/${cfg.repo}/actions/workflows/${WORKFLOW}/dispatches`, {
     method: 'POST',
     headers: headers(cfg.token),
-    body: JSON.stringify({ ref: 'main', inputs: { user_id: userId, run_id: runId } }),
+    body: JSON.stringify({ ref: 'main', inputs: { user_id: userId, run_id: runId, mode } }),
     signal: AbortSignal.timeout(15_000),
   }).catch(() => null);
   if (!res) return 'GitHub injoignable';
