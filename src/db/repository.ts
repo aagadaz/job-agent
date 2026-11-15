@@ -151,7 +151,7 @@ export const STALE_AFTER_DAYS = 3;
 export const AGGREGATOR_MAX_AGE_DAYS = 21;
 // « website » aussi : on n'y lit qu'une partie des pages, une absence ne prouve rien
 // « manual » : annonce lue une fois pour une candidature saisie à la main, jamais relue
-const AGGREGATORS = ['adzuna', 'francetravail', 'website', 'manual'];
+const AGGREGATORS = ['adzuna', 'francetravail', 'website', 'manual', 'himalayas'];
 
 /**
  * « Cette offre est toujours en ligne » : met à jour fetched_at de toutes les offres DÉJÀ en

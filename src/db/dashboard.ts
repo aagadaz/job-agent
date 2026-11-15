@@ -65,6 +65,7 @@ export interface ProfileInput {
   rejectThreshold: number;
   maxExperienceYears: number | null; // null = pas de limite
   useAdzuna: boolean;
+  useHimalayas: boolean;
   contractTypes: string[];
   cvText?: string; // absent = on garde le CV actuel
 }
