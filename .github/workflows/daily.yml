@@ -84,6 +84,8 @@ jobs:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          # Facultatif : sans clé, Himalayas fonctionne avec des limites de débit plus basses
+          HIMALAYAS_API_KEY: ${{ secrets.HIMALAYAS_API_KEY }}
           # Facultatifs : sans eux, la source France Travail est ignorée
           FRANCE_TRAVAIL_CLIENT_ID: ${{ secrets.FRANCE_TRAVAIL_CLIENT_ID }}
           FRANCE_TRAVAIL_CLIENT_SECRET: ${{ secrets.FRANCE_TRAVAIL_CLIENT_SECRET }}

@@ -38,6 +38,8 @@ export const profiles = pgTable('profiles', {
   maxExperienceYears: integer('max_experience_years').default(5),
   // Recherche Adzuna (agrégateur) activée ? false = pages carrières uniquement
   useAdzuna: boolean('use_adzuna').notNull().default(true),
+  // Offres en télétravail de Himalayas (API publique) ? Activé par défaut
+  useHimalayas: boolean('use_himalayas').notNull().default(true),
   // Types de contrat voulus (CDI, CDD, Stage, Alternance, Freelance, VIE). Vide = tous.
   // Une offre dont le contrat est inconnu est toujours gardée (cf. src/lib/contracts.ts).
   contractTypes: text('contract_types').array().notNull().default([]),

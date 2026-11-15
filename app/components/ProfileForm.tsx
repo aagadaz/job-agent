@@ -14,6 +14,7 @@ export interface ProfileFormValues {
   rejectThreshold: number;
   maxExperienceYears: number | null;
   useAdzuna: boolean;
+  useHimalayas: boolean;
   contractTypes: string[];
 }
 
@@ -71,6 +72,16 @@ export function ProfileForm({ initial }: { initial: ProfileFormValues }) {
           <span className="text-gray-500">
             (agrégateur : beaucoup d&apos;offres, mais certaines déjà pourvues. Décoché = uniquement les pages carrières
             de tes entreprises, toujours à jour.)
+          </span>
+        </span>
+      </label>
+      <label className="flex items-start gap-2 text-sm">
+        <input name="useHimalayas" type="checkbox" defaultChecked={initial.useHimalayas} className="mt-1" />
+        <span>
+          <span className="font-medium">Inclure les offres en télétravail (Himalayas)</span>{' '}
+          <span className="text-gray-500">
+            (postes 100 % à distance, ouverts aux pays de tes zones de recherche, avec l&apos;annonce complète.
+            Souvent en anglais et dans des entreprises étrangères.)
           </span>
         </span>
       </label>

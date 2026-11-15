@@ -20,13 +20,15 @@ import { mapPool } from './lib/concurrency';
 import { getSettings } from './db/settings';
 import { searchMode } from './lib/search-mode';
 import { fetchAdzunaOffers } from './sources/adzuna';
+import { fetchHimalayasOffers } from './sources/himalayas';
+import { disabledSources } from './lib/sources';
 import { fetchFranceTravailOffers, isFranceTravailConfigured } from './sources/france-travail';
 import { fetchCompanyJobs } from './sources/ats';
 
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
 
 /** Collecte toutes les sources en parallèle. Une source en panne n'empêche pas les autres. */
-async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean, contractTypes: string[], seen: Set<string>): Promise<JobDetail[]> {
+async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean, useHimalayas: boolean, contractTypes: string[], seen: Set<string>): Promise<JobDetail[]> {
   const companies = await getCompanies(userId);
   const countries = [...new Set(areas.map(a => a.country))];
 
@@ -46,6 +48,8 @@ async function collect(userId: string, keywords: string[], areas: SearchArea[], 
 
   const tasks: { label: string; run: () => Promise<JobDetail[]> }[] = [
     ...adzunaTasks,
+    // Himalayas : offres en télétravail ouvertes aux pays des zones (une seule tâche)
+    ...(useHimalayas ? [{ label: 'Himalayas (télétravail)', run: () => fetchHimalayasOffers(keywords, countries) }] : []),
     // France Travail : zones en France uniquement, si l'accès API est configuré
     ...(isFranceTravailConfigured() ? areas.filter(a => a.country === 'fr') : []).map(area => ({
       label: 'France Travail',
@@ -95,7 +99,7 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
 
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
   const seen = await getSeenUrls(user.id);
-  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna, profile.contractTypes, seen);
+  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna, profile.useHimalayas, profile.contractTypes, seen);
   // Toutes les offres renvoyées sont « encore en ligne », y compris celles déjà vues (et les pages
   // de sites carrières non relues) : c'est ce qui permet de repérer celles qui ont disparu
   await touchOffers(fetched.map(o => o.url));
@@ -137,7 +141,7 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   }
   const inserted = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
   // Puis on (re)classe tout le fil : expérience trop élevée, offres disparues des sources
-  const feed = await reconcileFeed(user.id, maxYears, profile.useAdzuna ? [] : ['adzuna'], profile.contractTypes);
+  const feed = await reconcileFeed(user.id, maxYears, disabledSources(profile), profile.contractTypes);
   console.log(`   Fil : ${feed.experience} écartées (expérience), ${feed.contract} (contrat), ${feed.expired} probablement fermées, ${feed.restored} réintégrées`);
   const kept = inserted.kept - tooSenior.size;
   const rejected = inserted.rejected + tooSenior.size;

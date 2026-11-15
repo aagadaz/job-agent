@@ -32,7 +32,7 @@ const REJECT_LABELS = {
 const SOURCE_LABELS: Record<string, string> = {
   adzuna: 'Adzuna', francetravail: 'France Travail', greenhouse: 'Greenhouse', lever: 'Lever', ashby: 'Ashby',
   workable: 'Workable', recruitee: 'Recruitee', smartrecruiters: 'SmartRecruiters', workday: 'Workday',
-  personio: 'Personio', teamtailor: 'Teamtailor', website: 'Site carrières', manual: 'Ajout manuel',
+  personio: 'Personio', teamtailor: 'Teamtailor', website: 'Site carrières', manual: 'Ajout manuel', himalayas: 'Himalayas',
 };
 const SINCE_LABELS: Record<number, string> = { 1: 'Dernières 24 h', 7: '7 derniers jours', 30: '30 derniers jours' };
 
@@ -344,7 +344,11 @@ export default async function OffersPage({ searchParams }: { searchParams: Promi
                   <p className="text-sm text-gray-600">
                     {o.company} · {o.location || 'Lieu non précisé'} · <b className="font-medium">{countryLabel(o.country)}</b>
                     {(() => { const c = classifyContract(o.employmentType, o.title); return c ? <> · <b className="font-medium">{c}</b></> : null; })()}
-                    {` · ${o.source}`}
+                    {' · '}
+                    {/* Himalayas exige un lien visible vers lui comme source (conditions de son API) */}
+                    {o.source === 'himalayas'
+                      ? <a href="https://himalayas.app" target="_blank" rel="noopener noreferrer" className="underline">via Himalayas</a>
+                      : (SOURCE_LABELS[o.source] ?? o.source)}
                     {o.datePosted && ` · publiée le ${o.datePosted}`}
                     {` · ajoutée le ${o.addedAt.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris' })}`}
                   </p>

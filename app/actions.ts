@@ -18,6 +18,7 @@ import { checkTrackingTab, parseSheetGid, parseSheetId } from '@/lib/sheets';
 import { pushManyToSheet, pushToSheet } from '@/lib/sheet-sync';
 import { STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { CONTRACTS } from '@/lib/contracts';
+import { disabledSources } from '@/lib/sources';
 import { mapPool } from '@/lib/concurrency';
 import { COUNTRY_CODES, type CountryCode } from '@/lib/countries';
 import { readCompanyLines } from '@/lib/csv';
@@ -56,6 +57,7 @@ const ProfileSchema = z.object({
   rejectThreshold: z.coerce.number().int().min(0).max(100),
   // Champ vide = pas de limite. Attention : z.coerce.number() transformerait "" en 0 (Number("") === 0) !
   useAdzuna: z.boolean(),
+  useHimalayas: z.boolean(),
   contractTypes: z.array(z.enum(CONTRACTS)).max(CONTRACTS.length),
   maxExperienceYears: z
     .string()
@@ -76,6 +78,7 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     maxExperienceYears: form.get('maxExperienceYears') ?? '',
     // Case à cocher : présente dans le formulaire SEULEMENT si cochée (valeur "on")
     useAdzuna: form.get('useAdzuna') === 'on',
+    useHimalayas: form.get('useHimalayas') === 'on',
     contractTypes: [...new Set(form.getAll('contractTypes').map(String))],
   });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
@@ -90,16 +93,16 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
   });
   if (!mode) return { ok: false, message: 'Sans clé Claude, indique au moins un mot-clé : ils ne peuvent pas être déduits du CV.' };
 
-  // Sans Adzuna, les seules sources sont les pages carrières : il en faut au moins une
-  if (!parsed.data.useAdzuna && (await listCompanies(userId)).length === 0) {
-    return { ok: false, message: 'Sans Adzuna, ajoute d\u2019abord des entreprises (onglet Entreprises) : sinon la recherche ne trouvera rien.' };
+  // Sans aucun agrégateur, les seules sources sont les pages carrières : il en faut au moins une
+  if (!parsed.data.useAdzuna && !parsed.data.useHimalayas && (await listCompanies(userId)).length === 0) {
+    return { ok: false, message: 'Sans Adzuna ni Himalayas, ajoute d\u2019abord des entreprises (onglet Entreprises) : sinon la recherche ne trouvera rien.' };
   }
 
   await saveProfile(userId, parsed.data);
   // Application IMMÉDIATE des réglages au fil existant (Adzuna désactivé, limite d'expérience
   // modifiée) : même fonction que le worker, donc exactement les mêmes règles. Pas besoin
   // d'attendre la prochaine recherche.
-  await reconcileFeed(userId, parsed.data.maxExperienceYears, parsed.data.useAdzuna ? [] : ['adzuna'], parsed.data.contractTypes);
+  await reconcileFeed(userId, parsed.data.maxExperienceYears, disabledSources(parsed.data), parsed.data.contractTypes);
   revalidatePath('/profile');
   revalidatePath('/offers');
   return { ok: true, message: 'Profil enregistré.' };
