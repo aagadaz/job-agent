@@ -1,0 +1,14 @@
+# Ce qui n'entre JAMAIS dans l'image : dépendances et builds locaux (refaits dans l'image),
+# historique git, et surtout les secrets et données personnelles.
+node_modules
+.next
+.git
+.github
+.env
+.env.*
+!.env.example
+credentials.json
+*.pdf
+cv.txt
+debug.png
+_proposition-claude
