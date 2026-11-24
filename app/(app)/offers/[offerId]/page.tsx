@@ -5,6 +5,7 @@ import { ScoreBadge } from '../../../components/ScoreBadge';
 import { DismissButton } from '../../../components/DismissButton';
 import { ClosedButton } from '../../../components/ClosedButton';
 import { StatusSelect } from '../../../components/StatusSelect';
+import { FavoriteButton } from '../../../components/FavoriteButton';
 import { getOfferDetail, getUserWithProfile } from '@/db/dashboard';
 import { listCvs } from '@/db/cvs';
 import { CoverLetterPanel } from '../../../components/CoverLetterPanel';
@@ -48,14 +49,17 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
           <h1 className="text-lg font-semibold sm:text-xl">{offer.title}</h1>
           <p className="text-sm text-gray-600">{meta}</p>
           {offer.salary && offer.salary !== 'Non précisé' && <p className="text-sm text-gray-600">Salaire : {offer.salary}</p>}
-          <a
-            href={offer.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-3 inline-block rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white sm:py-1.5"
-          >
-            Voir l&apos;annonce originale ↗
-          </a>
+          {/* Annonce collée sans lien (candidature ajoutée à la main) : pas de page à ouvrir */}
+          {/^https?:/.test(offer.url) && (
+            <a
+              href={offer.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-block rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white sm:py-1.5"
+            >
+              Voir l&apos;annonce originale ↗
+            </a>
+          )}
           {REDIRECTING_SOURCES.has(offer.source) && (
             <p className="mt-2 text-sm text-gray-500">
               Le lien {offer.source} ne s&apos;ouvre pas ? Chercher l&apos;offre sur{' '}
@@ -71,6 +75,7 @@ export default async function OfferPage({ params }: { params: Promise<{ offerId:
         {/* Téléphone : actions sur leur propre ligne ; écran large : colonne à droite */}
         <div className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-3 sm:w-auto sm:flex-col sm:items-end sm:border-0 sm:pt-0">
           <StatusSelect offerId={offer.offerId} status={offer.status} />
+          <FavoriteButton offerId={offer.offerId} favorite={offer.favorite} withLabel />
           <div className="flex items-center gap-3 sm:flex-col sm:items-end sm:gap-2">
             <ClosedButton offerId={offer.offerId} closed={offer.closedAt !== null} />
             <DismissButton offerId={offer.offerId} dismissed={offer.dismissedAt !== null} redirectTo="/offers" />

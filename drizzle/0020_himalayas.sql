@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "use_himalayas" boolean DEFAULT true NOT NULL;

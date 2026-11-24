@@ -94,3 +94,9 @@ export async function getCvText(userId: string, cvId: string): Promise<string | 
   const [row] = await db.select({ text: cvs.text }).from(cvs).where(and(eq(cvs.userId, userId), eq(cvs.id, cvId)));
   return row?.text ?? null;
 }
+
+/** Id du CV qui note les offres (null = aucun). */
+export async function getActiveCvId(userId: string): Promise<string | null> {
+  const [row] = await db.select({ id: profiles.activeCvId }).from(profiles).where(eq(profiles.userId, userId));
+  return row?.id ?? null;
+}

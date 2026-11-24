@@ -6,6 +6,7 @@ import {
   touchOffers, reconcileFeed,
 } from './db/repository';
 import { decrypt } from './lib/crypto';
+import { rescoreUser } from './rescore';
 import { deriveKeywords } from './lib/cv-analyzer';
 import { dedupeAcrossSources } from './lib/dedupe';
 import { excludeByTitle, includeByTitle, keepInCountries } from './lib/prefilter';
@@ -19,13 +20,15 @@ import { mapPool } from './lib/concurrency';
 import { getSettings } from './db/settings';
 import { searchMode } from './lib/search-mode';
 import { fetchAdzunaOffers } from './sources/adzuna';
+import { fetchHimalayasOffers } from './sources/himalayas';
+import { disabledSources } from './lib/sources';
 import { fetchFranceTravailOffers, isFranceTravailConfigured } from './sources/france-travail';
 import { fetchCompanyJobs } from './sources/ats';
 
 type ActiveUser = Awaited<ReturnType<typeof getActiveUsers>>[number];
 
 /** Collecte toutes les sources en parallèle. Une source en panne n'empêche pas les autres. */
-async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean, contractTypes: string[], seen: Set<string>): Promise<JobDetail[]> {
+async function collect(userId: string, keywords: string[], areas: SearchArea[], useAdzuna: boolean, useHimalayas: boolean, contractTypes: string[], seen: Set<string>): Promise<JobDetail[]> {
   const companies = await getCompanies(userId);
   const countries = [...new Set(areas.map(a => a.country))];
 
@@ -45,6 +48,8 @@ async function collect(userId: string, keywords: string[], areas: SearchArea[], 
 
   const tasks: { label: string; run: () => Promise<JobDetail[]> }[] = [
     ...adzunaTasks,
+    // Himalayas : offres en télétravail ouvertes aux pays des zones (une seule tâche)
+    ...(useHimalayas ? [{ label: 'Himalayas (télétravail)', run: () => fetchHimalayasOffers(keywords, countries) }] : []),
     // France Travail : zones en France uniquement, si l'accès API est configuré
     ...(isFranceTravailConfigured() ? areas.filter(a => a.country === 'fr') : []).map(area => ({
       label: 'France Travail',
@@ -94,7 +99,7 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
 
   // Entonnoir : collecte → déduplication inter-sources → filtres gratuits → déjà vues → scoring payant
   const seen = await getSeenUrls(user.id);
-  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna, profile.contractTypes, seen);
+  const fetched = await collect(user.id, keywords, areas, profile.useAdzuna, profile.useHimalayas, profile.contractTypes, seen);
   // Toutes les offres renvoyées sont « encore en ligne », y compris celles déjà vues (et les pages
   // de sites carrières non relues) : c'est ce qui permet de repérer celles qui ont disparu
   await touchOffers(fetched.map(o => o.url));
@@ -136,7 +141,7 @@ async function processUser({ user, profile }: ActiveUser): Promise<Record<string
   }
   const inserted = await insertUserOffers(user.id, scored, offerIds, profile.rejectThreshold);
   // Puis on (re)classe tout le fil : expérience trop élevée, offres disparues des sources
-  const feed = await reconcileFeed(user.id, maxYears, profile.useAdzuna ? [] : ['adzuna'], profile.contractTypes);
+  const feed = await reconcileFeed(user.id, maxYears, disabledSources(profile), profile.contractTypes);
   console.log(`   Fil : ${feed.experience} écartées (expérience), ${feed.contract} (contrat), ${feed.expired} probablement fermées, ${feed.restored} réintégrées`);
   const kept = inserted.kept - tooSenior.size;
   const rejected = inserted.rejected + tooSenior.size;
@@ -176,6 +181,16 @@ async function main() {
   // déjà créée par l'interface au moment du clic. Lancement planifié : tout le monde.
   const onlyUserId = optionalUuid('ONLY_USER_ID');
   const presetRunId = optionalUuid('RUN_ID');
+
+  // Réanalyse (changement de CV de notation) : un seul utilisateur, aucune collecte
+  if (process.env.MODE === 'rescore') {
+    if (!onlyUserId || !presetRunId) throw new Error('MODE=rescore exige ONLY_USER_ID et RUN_ID');
+    console.log(`▶ réanalyse, utilisateur ${onlyUserId.slice(0, 8)}`);
+    const stats = await rescoreUser(onlyUserId); // une erreur est rattrapée plus bas (finishRun)
+    await finishRun(presetRunId, { status: 'success', stats });
+    console.log(`   ✅ ${stats.rescored} offres réanalysées (${stats.kept} retenues, ${stats.rejected} écartées)`);
+    return;
+  }
 
   const activeUsers = await getActiveUsers(onlyUserId);
   if (onlyUserId && activeUsers.length === 0) {

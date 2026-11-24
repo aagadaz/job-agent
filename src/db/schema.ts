@@ -38,6 +38,8 @@ export const profiles = pgTable('profiles', {
   maxExperienceYears: integer('max_experience_years').default(5),
   // Recherche Adzuna (agrégateur) activée ? false = pages carrières uniquement
   useAdzuna: boolean('use_adzuna').notNull().default(true),
+  // Offres en télétravail de Himalayas (API publique) ? Activé par défaut
+  useHimalayas: boolean('use_himalayas').notNull().default(true),
   // Types de contrat voulus (CDI, CDD, Stage, Alternance, Freelance, VIE). Vide = tous.
   // Une offre dont le contrat est inconnu est toujours gardée (cf. src/lib/contracts.ts).
   contractTypes: text('contract_types').array().notNull().default([]),
@@ -122,6 +124,8 @@ export const userOffers = pgTable('user_offers', {
   // Suppression LOGIQUE : la ligne reste (le worker sait que l'offre est déjà vue et ne la
   // re-note pas), elle est seulement masquée du fil. null = visible.
   dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+  // Mise en favori (étoile) : PERSONNELLE, comme tout le reste de cette table. null = pas favori.
+  favoriteAt: timestamp('favorite_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   primaryKey({ columns: [t.userId, t.offerId] }), // une ligne par (utilisateur, offre), pas plus
@@ -134,7 +138,7 @@ export const runs = pgTable('runs', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   status: runStatusEnum('status').notNull().default('running'),
-  stats: jsonb('stats').$type<{ fetched?: number; afterFilters?: number; new?: number; kept?: number; rejected?: number; unscored?: number; tooSenior?: number; expired?: number }>(),
+  stats: jsonb('stats').$type<{ fetched?: number; afterFilters?: number; new?: number; kept?: number; rejected?: number; unscored?: number; tooSenior?: number; expired?: number; scoreFailed?: number; rescore?: number; rescored?: number }>(),
   error: text('error'),
   startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
   finishedAt: timestamp('finished_at', { withTimezone: true }),

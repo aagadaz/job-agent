@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, getTableColumns, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { db } from './client';
 import { applications, contacts, offers, profiles, userOffers } from './schema';
 import {
@@ -7,6 +7,8 @@ import {
 import { fold } from '../lib/text';
 import type { TrackedRow } from '../lib/sheets';
 import type { CompanyToClassify } from '../lib/company-classifier';
+import type { JobDetail, OfferScore } from '../lib/types';
+import { requiredYears } from '../lib/experience';
 
 // Requêtes de l'onglet « Candidatures ». Règle d'or inchangée : TOUT est filtré par userId.
 
@@ -310,4 +312,61 @@ export async function applyCompanyTypes(userId: string, types: Map<string, strin
     n += done.length;
   }
   return n;
+}
+
+// ─── Analyse d'une candidature ajoutée à la main ───
+
+const VERDICT_TO_DB = { 'Postuler': 'postuler', 'À étudier': 'a_etudier', 'Ignorer': 'ignorer' } as const;
+
+/** Une candidature de l'utilisateur (seulement la sienne). */
+export async function getApplication(userId: string, applicationId: string) {
+  const [row] = await db.select().from(applications).where(and(eq(applications.userId, userId), eq(applications.id, applicationId)));
+  return row;
+}
+
+/**
+ * Donne une fiche d'offre à une candidature saisie à la main : l'offre (texte de l'annonce),
+ * sa note pour CET utilisateur, puis le lien candidature → offre. La fiche de l'offre affiche
+ * alors l'analyse de Claude et permet de rédiger la lettre, comme pour une offre du fil.
+ *
+ * L'offre est propre à la candidature (clé = lien + #job-agent-<id>) : le texte collé par un
+ * utilisateur ne remplace jamais l'annonce qu'un autre voit pour le même lien.
+ */
+export async function attachOfferToApplication(
+  userId: string,
+  applicationId: string,
+  job: JobDetail,
+  scoring: OfferScore | null,
+): Promise<string | null> {
+  return db.transaction(async tx => {
+    const [app] = await tx.select().from(applications)
+      .where(and(eq(applications.userId, userId), eq(applications.id, applicationId), isNull(applications.offerId)));
+    if (!app) return null;
+    const key = /^https?:\/\//i.test(app.url) ? `${app.url.split('#')[0]}#job-agent-${app.id}` : `manuel:${app.id}`;
+    const [offer] = await tx.insert(offers).values({
+      url: key,
+      source: 'manual',
+      title: job.title || app.title || 'Poste',
+      company: app.company || job.company,
+      location: job.location,
+      salary: job.salary,
+      employmentType: job.employmentType || app.contract,
+      datePosted: job.datePosted,
+      description: job.description,
+      qualifications: job.qualifications,
+      country: job.country ?? null,
+    }).returning({ id: offers.id });
+    await tx.insert(userOffers).values({
+      userId,
+      offerId: offer.id,
+      score: scoring?.score ?? null,
+      verdict: scoring ? VERDICT_TO_DB[scoring.verdict] : null,
+      justification: scoring?.justification ?? '',
+      strengths: scoring?.strengths ?? [],
+      missingSkills: scoring?.missingSkills ?? [],
+      requiredYears: requiredYears(job.title, job.description, job.qualifications),
+    });
+    await tx.update(applications).set({ offerId: offer.id, updatedAt: new Date() }).where(eq(applications.id, app.id));
+    return offer.id;
+  });
 }

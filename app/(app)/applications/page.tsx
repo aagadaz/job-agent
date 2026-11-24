@@ -10,6 +10,10 @@ import { AddContactForm, ContactCard, ContactRow, type ContactView } from '../..
 import { Dashboard } from '../../components/applications/Dashboard';
 import { ImportSheetForm } from '../../components/applications/ImportSheetForm';
 
+// Lire une annonce puis la noter avec Claude (bouton « Analyser avec mon CV ») peut prendre
+// une trentaine de secondes : on laisse 60 s aux server actions de cette page.
+export const maxDuration = 60;
+
 type Params = { tab?: string; stage?: string; q?: string; relance?: string; company?: string };
 
 export default async function ApplicationsPage({ searchParams }: { searchParams: Promise<Params> }) {

@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react';
 import { editApplication, removeApplications } from '../../applications-actions';
 import { CONTRACTS, STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { EditDate, EditSelect, EditText } from './Editable';
+import { AnalyzeButton } from './AnalyzeButton';
 
 export interface ApplicationView {
   id: string; company: string; companyType: string; title: string; url: string; contract: string;
@@ -50,10 +51,12 @@ export function ApplicationRow({ a, index, contactsHref, selected, onToggle, cat
           <EditText value={a.title} save={save('title')} placeholder="Poste" />
           {a.url && <a href={a.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-gray-400 hover:text-gray-700" title="Ouvrir l'annonce">↗</a>}
         </div>
-        {a.offerId && (
+        {a.offerId ? (
           <a href={`/offers/${a.offerId}`} className="text-xs text-blue-700 hover:underline" title="Fiche de l'offre : analyse, description et lettre de motivation">
             {a.hasLetter ? 'Lettre rédigée · fiche de l’offre' : 'Fiche de l’offre'}
           </a>
+        ) : (
+          <AnalyzeButton applicationId={a.id} compact />
         )}
         {!a.url && <EditText value="" save={save('url')} placeholder="Coller le lien de l'annonce…" className="text-xs text-gray-500" />}
       </td>

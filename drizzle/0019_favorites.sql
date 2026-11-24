@@ -1,0 +1,1 @@
+ALTER TABLE "user_offers" ADD COLUMN "favorite_at" timestamp with time zone;

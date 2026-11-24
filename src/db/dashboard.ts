@@ -13,6 +13,8 @@ import { DEFAULT_SORT, type SortSpec } from '../lib/offer-sort';
 // pas (cf. lib/status.ts). Toute requête du fil fait donc une jointure GAUCHE sur applications.
 const applicationOfOffer = and(eq(applications.userId, userOffers.userId), eq(applications.offerId, userOffers.offerId));
 const feedStatus = sql<FeedStatus>`coalesce(${applications.stage}::text, 'a_traiter')`;
+/** Statuts « pas encore postulé » : ceux que le fil montre par défaut. */
+export const NOT_APPLIED: FeedStatus[] = ['a_traiter', 'not_started'];
 
 // ─── Comptes ───
 /**
@@ -63,6 +65,7 @@ export interface ProfileInput {
   rejectThreshold: number;
   maxExperienceYears: number | null; // null = pas de limite
   useAdzuna: boolean;
+  useHimalayas: boolean;
   contractTypes: string[];
   cvText?: string; // absent = on garde le CV actuel
 }
@@ -152,6 +155,9 @@ export async function countNewOffers(userId: string): Promise<number> {
       eq(userOffers.rejected, false),
       isNull(userOffers.dismissedAt),
       gte(userOffers.createdAt, sql`now() - interval '24 hours'`),
+      // Comme le fil : seulement les offres pas encore postulées
+      sql`not exists (select 1 from ${applications} where ${applications.userId} = ${userOffers.userId}
+        and ${applications.offerId} = ${userOffers.offerId} and ${applications.stage} <> 'not_started')`,
     ));
   return n;
 }
@@ -160,6 +166,7 @@ export async function countNewOffers(userId: string): Promise<number> {
 export interface FeedFilters {
   showRejected: boolean;
   dismissed?: boolean;           // vue Corbeille
+  favorites?: boolean;           // vue Favoris (étoile)
   statuses?: FeedStatus[];
   countries?: string[];          // 'none' = pays non déterminé
   sources?: string[];
@@ -181,8 +188,17 @@ function feedConditions(userId: string, f: FeedFilters, omit?: Facet) {
   const c = [eq(userOffers.userId, userId)];
   // Corbeille : seulement les supprimées ; sinon, jamais les supprimées
   c.push(f.dismissed ? isNotNull(userOffers.dismissedAt) : isNull(userOffers.dismissedAt));
-  if (!f.showRejected) c.push(eq(userOffers.rejected, false));
-  if (omit !== 'status' && f.statuses?.length) c.push(inArray(feedStatus, f.statuses));
+  // Favoris : l'utilisateur les a gardés exprès, ils restent visibles même écartés (offre
+  // probablement fermée, note sous le seuil…) ; le motif s'affiche sur la carte
+  if (f.favorites) c.push(isNotNull(userOffers.favoriteAt));
+  else if (!f.showRejected) c.push(eq(userOffers.rejected, false));
+  if (omit !== 'status') {
+    if (f.statuses?.length) c.push(inArray(feedStatus, f.statuses));
+    // Par défaut, le fil = les offres auxquelles on n'a PAS encore postulé. Dès qu'une offre
+    // passe en « Envoyée », « En discussion »… elle vit dans l'onglet Candidatures. On la
+    // retrouve ici en cochant son statut dans les filtres. Favoris et corbeille : tout.
+    else if (!f.favorites && !f.dismissed) c.push(inArray(feedStatus, NOT_APPLIED));
+  }
   if (omit !== 'source' && f.sources?.length) c.push(inArray(offers.source, f.sources));
   if (omit !== 'country' && f.countries?.length) {
     const known = f.countries.filter(x => x !== 'none');
@@ -282,6 +298,7 @@ export async function listOffers(userId: string, opts: FeedFilters & { sort?: So
       status: feedStatus,
       rejected: userOffers.rejected,
       rejectReason: userOffers.rejectReason,
+      favorite: sql<boolean>`${userOffers.favoriteAt} is not null`,
       requiredYears: userOffers.requiredYears,
       closedAt: offers.closedAt,
       addedAt: userOffers.createdAt, // date d'arrivée de l'offre dans le fil de CET utilisateur
@@ -293,6 +310,26 @@ export async function listOffers(userId: string, opts: FeedFilters & { sort?: So
     .orderBy(...orderFor(opts.sort ?? DEFAULT_SORT))
     .limit(PAGE_SIZE)
     .offset(((opts.page ?? 1) - 1) * PAGE_SIZE);
+}
+
+/** Met (ou retire) des offres en favori — seulement les siennes. Renvoie le nombre modifié. */
+export async function setOffersFavorite(userId: string, offerIds: string[], favorite: boolean): Promise<number> {
+  if (offerIds.length === 0) return 0;
+  const rows = await db
+    .update(userOffers)
+    .set({ favoriteAt: favorite ? new Date() : null })
+    .where(and(eq(userOffers.userId, userId), inArray(userOffers.offerId, offerIds)))
+    .returning({ offerId: userOffers.offerId });
+  return rows.length;
+}
+
+/** Nombre de favoris visibles (hors corbeille) : pour le raccourci « Favoris (n) » du fil. */
+export async function countFavorites(userId: string): Promise<number> {
+  const [{ n }] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(userOffers)
+    .where(and(eq(userOffers.userId, userId), isNotNull(userOffers.favoriteAt), isNull(userOffers.dismissedAt)));
+  return n;
 }
 
 /** Masque (dismissed = true) ou restaure des offres du fil — seulement les siennes. */
@@ -329,6 +366,7 @@ export async function getOfferDetail(userId: string, offerId: string) {
       missingSkills: userOffers.missingSkills,
       status: feedStatus,
       dismissedAt: userOffers.dismissedAt,
+      favorite: sql<boolean>`${userOffers.favoriteAt} is not null`,
       closedAt: offers.closedAt,
       coverLetter: userOffers.coverLetter,
     })
@@ -381,8 +419,9 @@ export async function setOfferClosed(userId: string, offerId: string, closed: bo
 
 // ─── Dernière exécution du worker ───
 /** Crée la ligne "runs" dès le clic : l'interface affiche « en cours » sans attendre GitHub. */
-export async function createManualRun(userId: string): Promise<string> {
-  const [run] = await db.insert(runs).values({ userId }).returning({ id: runs.id });
+export async function createManualRun(userId: string, kind: 'search' | 'rescore' = 'search'): Promise<string> {
+  // Réanalyse : marqueur dans stats dès la création, pour afficher « Réanalyse en cours… »
+  const [run] = await db.insert(runs).values({ userId, stats: kind === 'rescore' ? { rescore: 1 } : undefined }).returning({ id: runs.id });
   return run.id;
 }
 

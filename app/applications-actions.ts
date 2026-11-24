@@ -8,8 +8,14 @@ import { CONTRACTS, STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { classifyInBackground, classifyMissingTypes } from '@/lib/classify-runner';
 import {
   createApplication, createContact, deleteApplications, deleteContact, updateStages, getSheetSettings, importFromSheet, setWeeklyGoal,
-  updateApplication, updateContact,
+  updateApplication, updateContact, getApplication, attachOfferToApplication,
 } from '@/db/applications';
+import Anthropic from '@anthropic-ai/sdk';
+import { getUserWithProfile } from '@/db/dashboard';
+import { decrypt } from '@/lib/crypto';
+import { FatalScoringError, scoreOffer } from '@/lib/scorer';
+import { readJobPage } from '@/sources/website';
+import type { JobDetail, OfferScore } from '@/lib/types';
 import { parseSheetGid, parseSheetId, readTrackingRows } from '@/lib/sheets';
 import { pushManyToSheet, pushToSheet } from '@/lib/sheet-sync';
 
@@ -54,7 +60,17 @@ export async function addApplication(_prev: ActionResult | null, form: FormData)
   if (!parsed.data.companyType) after(() => classifyInBackground(userId));
   revalidatePath('/applications');
   const sheet = await pushToSheet(userId, id);
-  return sheet.ok ? { ok: true, message: `Candidature ajoutée.${sheet.message ? ` ${sheet.message}.` : ''}` } : sheet;
+  if (!sheet.ok) return sheet;
+  let message = `Candidature ajoutée.${sheet.message ? ` ${sheet.message}.` : ''}`;
+  // Analyse demandée et possible (un lien ou le texte de l'annonce) : fiche, note et lettre
+  const jobText = String(form.get('jobText') ?? '').trim();
+  if (form.get('analyze') === 'on' && (parsed.data.url || jobText)) {
+    const analysis = await analyzeApplication(id, jobText);
+    message += analysis.ok
+      ? ` ${analysis.message} Ouvre « Fiche de l’offre » sur la ligne pour voir la compatibilité et rédiger la lettre.`
+      : ` ${analysis.message.replace('ci-dessous', 'avec le bouton « Analyser avec mon CV » de la ligne')}`;
+  }
+  return { ok: true, message };
 }
 
 /** Modification d'UN champ depuis le tableau (édition en ligne). */
@@ -193,4 +209,70 @@ export async function autoClassify(): Promise<ActionResult> {
         : 'Classement impossible pour le moment. Réessaie plus tard.',
     };
   }
+}
+
+// ─── Analyse d'une candidature ajoutée à la main (compatibilité + lettre) ───
+
+export interface AnalyzeResult { ok: boolean; message: string; offerId?: string; needText?: boolean }
+
+const READ_ERRORS: Record<string, string> = {
+  invalid: 'Ce lien n’est pas une adresse web publique.',
+  excluded: 'LinkedIn et Indeed ne se laissent pas lire automatiquement.',
+  robots: 'Ce site interdit la lecture automatique de ses pages.',
+  blocked: 'Le site a bloqué la lecture automatique.',
+  unreadable: 'Impossible de lire l’annonce sur cette page (vide, ou affichée par JavaScript).',
+};
+const MIN_PASTED = 150;
+const MAX_PASTED = 15_000;
+
+/**
+ * Lit l'annonce (lien de la candidature, ou texte collé), la note avec le CV et la clé Claude
+ * de l'utilisateur, puis la rattache à la candidature. Renvoie needText quand le lien ne se lit
+ * pas : l'interface propose alors de coller le texte de l'annonce.
+ */
+export async function analyzeApplication(applicationId: string, pastedText = ''): Promise<AnalyzeResult> {
+  const userId = await requireUserId();
+  const id = z.string().uuid().safeParse(applicationId);
+  if (!id.success) return { ok: false, message: 'Candidature invalide.' };
+  const app = await getApplication(userId, id.data);
+  if (!app) return { ok: false, message: 'Candidature introuvable.' };
+  if (app.offerId) return { ok: true, message: '', offerId: app.offerId };
+
+  // 1) Le texte de l'annonce : collé par l'utilisateur, sinon lu depuis le lien
+  const pasted = String(pastedText).trim().slice(0, MAX_PASTED);
+  let job: JobDetail;
+  if (pasted) {
+    if (pasted.length < MIN_PASTED) return { ok: false, needText: true, message: 'Colle le texte complet de l’annonce (missions, profil recherché).' };
+    job = { title: app.title, company: app.company, location: '', description: pasted, qualifications: '', salary: '', employmentType: '', datePosted: '', url: app.url, source: 'manual' };
+  } else if (app.url) {
+    const read = await readJobPage(app.url);
+    if (!read.ok) return { ok: false, needText: true, message: `${READ_ERRORS[read.reason]} Colle le texte de l’annonce ci-dessous.` };
+    job = read.job;
+  } else {
+    return { ok: false, needText: true, message: 'Pas de lien pour cette candidature : colle le texte de l’annonce.' };
+  }
+
+  // 2) La note, si l'utilisateur a une clé Claude et un CV (sinon fiche sans note)
+  const account = await getUserWithProfile(userId);
+  const key = account?.user.anthropicKeyEncrypted;
+  const cvText = account?.profile?.cvText;
+  let scoring: OfferScore | null = null;
+  let note = '';
+  if (key && cvText) {
+    try {
+      scoring = await scoreOffer(new Anthropic({ apiKey: decrypt(key) }), cvText, { ...job, title: job.title || app.title, company: app.company || job.company });
+      if (!scoring) note = ' La note n’a pas pu être calculée (réessaie plus tard).';
+    } catch (err) {
+      note = ` Note impossible : ${err instanceof FatalScoringError ? err.message : 'erreur Claude'}.`;
+    }
+  } else {
+    note = ' Ajoute ta clé Claude et ton CV dans Profil pour obtenir la note de compatibilité.';
+  }
+
+  // 3) Rattachement
+  const offerId = await attachOfferToApplication(userId, id.data, job, scoring);
+  if (!offerId) return { ok: false, message: 'Candidature introuvable.' };
+  revalidatePath('/applications');
+  revalidatePath('/offers');
+  return { ok: true, offerId, message: `Annonce analysée.${note}` };
 }

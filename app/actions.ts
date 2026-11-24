@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { after } from 'next/server';
 import { z } from 'zod';
 import {
-  createManualRun, deleteCompany, failRun, addCatalogCompanies, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOffersDismissed,
+  createManualRun, deleteCompany, failRun, addCatalogCompanies, getOfferDetail, getUserWithProfile, setCoverLetter, insertCompany, listCompanies, saveEncryptedKey, saveProfile, saveSheetId, setOfferClosed, setOffersDismissed, setOffersFavorite,
 } from '@/db/dashboard';
 import { decrypt, encrypt, maskSecret } from '@/lib/crypto';
 import { generateCoverLetter } from '@/lib/cover-letter';
@@ -18,6 +18,7 @@ import { checkTrackingTab, parseSheetGid, parseSheetId } from '@/lib/sheets';
 import { pushManyToSheet, pushToSheet } from '@/lib/sheet-sync';
 import { STAGES, STAGE_KEYS, type Stage } from '@/lib/applications';
 import { CONTRACTS } from '@/lib/contracts';
+import { disabledSources } from '@/lib/sources';
 import { mapPool } from '@/lib/concurrency';
 import { COUNTRY_CODES, type CountryCode } from '@/lib/countries';
 import { readCompanyLines } from '@/lib/csv';
@@ -56,6 +57,7 @@ const ProfileSchema = z.object({
   rejectThreshold: z.coerce.number().int().min(0).max(100),
   // Champ vide = pas de limite. Attention : z.coerce.number() transformerait "" en 0 (Number("") === 0) !
   useAdzuna: z.boolean(),
+  useHimalayas: z.boolean(),
   contractTypes: z.array(z.enum(CONTRACTS)).max(CONTRACTS.length),
   maxExperienceYears: z
     .string()
@@ -76,6 +78,7 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
     maxExperienceYears: form.get('maxExperienceYears') ?? '',
     // Case à cocher : présente dans le formulaire SEULEMENT si cochée (valeur "on")
     useAdzuna: form.get('useAdzuna') === 'on',
+    useHimalayas: form.get('useHimalayas') === 'on',
     contractTypes: [...new Set(form.getAll('contractTypes').map(String))],
   });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
@@ -90,16 +93,16 @@ export async function updateProfile(_prev: ActionResult | null, form: FormData):
   });
   if (!mode) return { ok: false, message: 'Sans clé Claude, indique au moins un mot-clé : ils ne peuvent pas être déduits du CV.' };
 
-  // Sans Adzuna, les seules sources sont les pages carrières : il en faut au moins une
-  if (!parsed.data.useAdzuna && (await listCompanies(userId)).length === 0) {
-    return { ok: false, message: 'Sans Adzuna, ajoute d\u2019abord des entreprises (onglet Entreprises) : sinon la recherche ne trouvera rien.' };
+  // Sans aucun agrégateur, les seules sources sont les pages carrières : il en faut au moins une
+  if (!parsed.data.useAdzuna && !parsed.data.useHimalayas && (await listCompanies(userId)).length === 0) {
+    return { ok: false, message: 'Sans Adzuna ni Himalayas, ajoute d\u2019abord des entreprises (onglet Entreprises) : sinon la recherche ne trouvera rien.' };
   }
 
   await saveProfile(userId, parsed.data);
   // Application IMMÉDIATE des réglages au fil existant (Adzuna désactivé, limite d'expérience
   // modifiée) : même fonction que le worker, donc exactement les mêmes règles. Pas besoin
   // d'attendre la prochaine recherche.
-  await reconcileFeed(userId, parsed.data.maxExperienceYears, parsed.data.useAdzuna ? [] : ['adzuna'], parsed.data.contractTypes);
+  await reconcileFeed(userId, parsed.data.maxExperienceYears, disabledSources(parsed.data), parsed.data.contractTypes);
   revalidatePath('/profile');
   revalidatePath('/offers');
   return { ok: true, message: 'Profil enregistré.' };
@@ -226,6 +229,13 @@ export async function dismissOffer(offerId: string, dismissed: boolean): Promise
   revalidatePath('/offers');
 }
 
+/** Met une offre en favori (étoile), ou l'en retire. */
+export async function favoriteOffer(offerId: string, favorite: boolean): Promise<void> {
+  const userId = await requireUserId();
+  await setOffersFavorite(userId, [z.string().uuid().parse(offerId)], z.boolean().parse(favorite));
+  revalidatePath('/offers', 'layout'); // le fil et la fiche de l'offre
+}
+
 /** « Cette offre n'est plus disponible » (ou annulation si l'utilisateur s'est trompé). */
 export async function reportClosed(offerId: string, closed: boolean): Promise<void> {
   const userId = await requireUserId();
@@ -264,12 +274,18 @@ export async function bulkOffers(_prev: ActionResult | null, form: FormData): Pr
   const userId = await requireUserId();
   const parsed = z.object({
     ids: z.array(z.string().uuid()).min(1, 'Coche au moins une offre.').max(200),
-    op: z.union([z.enum(['dismiss', 'restore']), StageSchema]),
+    op: z.union([z.enum(['dismiss', 'restore', 'favorite', 'unfavorite']), StageSchema]),
   }).safeParse({ ids: form.getAll('ids').map(String), op: String(form.get('op') ?? '') });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
   const ids = [...new Set(parsed.data.ids)];
   const { op } = parsed.data;
   const plural = (n: number) => (n > 1 ? 's' : '');
+
+  if (op === 'favorite' || op === 'unfavorite') {
+    const n = await setOffersFavorite(userId, ids, op === 'favorite');
+    revalidatePath('/offers');
+    return { ok: true, message: `${n} offre${plural(n)} ${op === 'favorite' ? `ajoutée${plural(n)} aux` : `retirée${plural(n)} des`} favoris.` };
+  }
 
   if (op === 'dismiss' || op === 'restore') {
     const n = await setOffersDismissed(userId, ids, op === 'dismiss');
@@ -344,7 +360,7 @@ export async function triggerSearch(_prev: ActionResult | null): Promise<ActionR
   }
   // Le délai ne s'applique qu'après une recherche RÉUSSIE : après un échec, on doit pouvoir
   // réessayer tout de suite une fois la cause corrigée.
-  if (previous?.status === 'success') {
+  if (previous?.status === 'success' && !previous.stats?.rescore) { // une réanalyse ne compte pas
     const age = Date.now() - previous.startedAt.getTime();
     if (age < COOLDOWN_MS) {
       return { ok: false, message: `Dernière recherche trop récente : réessaie dans ${Math.ceil((COOLDOWN_MS - age) / 60_000)} min.` };

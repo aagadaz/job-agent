@@ -20,6 +20,10 @@ on:
         description: "UUID de la ligne runs créée par l'interface (facultatif)"
         required: false
         default: ''
+      mode:
+        description: "search = recherche d'offres ; rescore = réanalyse des offres avec le nouveau CV"
+        required: false
+        default: 'search'
 
 concurrency:
   # Une file par utilisateur pour les lancements manuels, une file "all" pour le cron :
@@ -80,6 +84,8 @@ jobs:
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          # Facultatif : sans clé, Himalayas fonctionne avec des limites de débit plus basses
+          HIMALAYAS_API_KEY: ${{ secrets.HIMALAYAS_API_KEY }}
           # Facultatifs : sans eux, la source France Travail est ignorée
           FRANCE_TRAVAIL_CLIENT_ID: ${{ secrets.FRANCE_TRAVAIL_CLIENT_ID }}
           FRANCE_TRAVAIL_CLIENT_SECRET: ${{ secrets.FRANCE_TRAVAIL_CLIENT_SECRET }}
@@ -87,3 +93,4 @@ jobs:
           # (sinon une valeur malveillante deviendrait une commande shell : injection)
           ONLY_USER_ID: ${{ inputs.user_id }}
           RUN_ID: ${{ inputs.run_id }}
+          MODE: ${{ inputs.mode }}

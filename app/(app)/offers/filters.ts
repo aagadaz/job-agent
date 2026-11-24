@@ -9,7 +9,7 @@ import { SUPPORTED_ATS } from '@/sources/ats';
 
 export type RawParams = Record<string, string | string[] | undefined>;
 
-export const SOURCES = ['adzuna', 'francetravail', ...SUPPORTED_ATS] as const;
+export const SOURCES = ['adzuna', 'francetravail', 'himalayas', 'manual', ...SUPPORTED_ATS] as const;
 export const SINCE_OPTIONS = [1, 7, 30] as const;
 export const SCORE_OPTIONS = [50, 60, 70, 80] as const;
 
@@ -24,11 +24,13 @@ export interface ParsedFilters extends FeedFilters { sort: SortSpec[]; page: num
 
 export function parseFilters(p: RawParams): ParsedFilters {
   const dismissed = one(p.dismissed) === '1';
+  const favorites = !dismissed && one(p.fav) === '1'; // vue Favoris (pas en même temps que la corbeille)
   const minScore = Number(one(p.min));
   const since = Number(one(p.since));
   const q = (one(p.q) ?? '').trim().slice(0, 80);
   return {
     dismissed,
+    favorites,
     showRejected: one(p.rejected) === '1' || dismissed,
     statuses: list<FeedStatus>(p.status, FEED_STATUSES),
     countries: list(p.country, [...COUNTRY_CODES, 'none']),
@@ -63,6 +65,7 @@ export function filtersHref(f: Partial<ParsedFilters> & { sort: SortSpec[] }, pa
   if (g.q) s.set('q', g.q);
   if (g.dismissed) s.set('dismissed', '1');
   else if (g.showRejected) s.set('rejected', '1');
+  if (g.favorites && !g.dismissed) s.set('fav', '1');
   if (!isDefaultSort(g.sort)) s.set('sort', serializeSort(g.sort));
   if (g.page && g.page > 1) s.set('page', String(g.page));
   const qs = s.toString();

@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { requireUserId } from '@/lib/session';
 import { extractPdfText } from '@/lib/cv-analyzer';
-import { MAX_CVS, activateCv, countCvs, createCv, deleteCv, renameCv } from '@/db/cvs';
+import { MAX_CVS, activateCv, countCvs, createCv, deleteCv, getActiveCvId, renameCv } from '@/db/cvs';
+import { startRescore } from '@/lib/rescore-trigger';
 
 // Server actions de la bibliothèque de CV. Comme partout : session revérifiée, chaque champ
 // validé, et l'identifiant de l'utilisateur imposé par le serveur dans chaque requête.
@@ -46,9 +47,14 @@ export async function addCv(_prev: CvActionResult | null, form: FormData): Promi
   }
   if (!text) return { ok: false, message: 'Choisis un PDF ou colle le texte du CV.' };
 
-  await createCv(userId, { name: name.data, text: text.slice(0, MAX_TEXT_CHARS), fileName, fileData });
+  const id = await createCv(userId, { name: name.data, text: text.slice(0, MAX_TEXT_CHARS), fileName, fileData });
+  // « Utiliser ce CV pour noter mes offres » (coché par défaut). Le tout premier CV l'est d'office.
+  if (form.get('useForScoring') === 'on') await activateCv(userId, id);
+  const nowActive = (await getActiveCvId(userId)) === id;
+  // Le CV de notation a changé : les offres déjà notées le sont avec l'ancien → réanalyse
+  const rescore = nowActive ? (await startRescore(userId)).message : '';
   refresh();
-  return { ok: true, message: 'CV ajouté.' };
+  return { ok: true, message: `CV ajouté${nowActive ? ' et utilisé pour la notation' : ''}.${rescore ? ` ${rescore}` : ''}` };
 }
 
 export async function renameCvAction(cvId: string, name: string): Promise<CvActionResult> {
@@ -63,11 +69,21 @@ export async function renameCvAction(cvId: string, name: string): Promise<CvActi
 /** Choisit le CV qui note les offres (à la prochaine recherche) et rédige les lettres par défaut. */
 export async function activateCvAction(cvId: string): Promise<CvActionResult> {
   const userId = await requireUserId();
-  const ok = await activateCv(userId, Id.parse(cvId));
+  const id = Id.parse(cvId);
+  const previous = await getActiveCvId(userId);
+  const ok = await activateCv(userId, id);
+  if (!ok) return { ok: false, message: 'CV introuvable.' };
+  const rescore = previous !== id ? (await startRescore(userId)).message : '';
   refresh();
-  return ok
-    ? { ok: true, message: 'Ce CV notera les offres à partir de la prochaine recherche.' }
-    : { ok: false, message: 'CV introuvable.' };
+  return { ok: true, message: `Ce CV note maintenant tes offres.${rescore ? ` ${rescore}` : ''}` };
+}
+
+/** Bouton « Réanalyser mes offres » : re-note les offres du fil avec le CV de notation actuel. */
+export async function rescoreAction(): Promise<CvActionResult> {
+  const userId = await requireUserId();
+  const { started, message } = await startRescore(userId);
+  refresh();
+  return { ok: started, message: message || 'Aucun CV de notation : ajoutes-en un.' };
 }
 
 export async function deleteCvAction(cvId: string): Promise<CvActionResult> {

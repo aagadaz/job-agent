@@ -6,7 +6,7 @@ export interface RunSnapshot {
   status: 'running' | 'success' | 'error';
   error: string | null;    // message POUR L'UTILISATEUR (déjà traduit côté serveur)
   details?: string | null; // erreur technique brute : seulement pour les administrateurs
-  stats: { fetched?: number; new?: number; kept?: number; rejected?: number; unscored?: number; tooSenior?: number; expired?: number; scoreFailed?: number } | null;
+  stats: { fetched?: number; new?: number; kept?: number; rejected?: number; unscored?: number; tooSenior?: number; expired?: number; scoreFailed?: number; rescore?: number; rescored?: number } | null;
 }
 
 export interface RunSummary {
@@ -20,7 +20,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n > 1 ? many : 
 
 export function summarizeRun(run: RunSnapshot): RunSummary {
   const summary = baseSummary(run);
-  if (run.status !== 'success') return summary;
+  if (run.status !== 'success' || run.stats?.rescore) return summary;
   let text = summary.text;
   // Compléments : offres dont la notation a échoué (retentées), offres disparues des sources
   const failed = run.stats?.scoreFailed ?? 0;
@@ -31,6 +31,19 @@ export function summarizeRun(run: RunSnapshot): RunSummary {
 }
 
 function baseSummary(run: RunSnapshot): RunSummary {
+  // Réanalyse après un changement de CV de notation (marqueur rescore dans les stats)
+  if (run.stats?.rescore) {
+    if (run.status === 'running') return { tone: 'info', text: 'Réanalyse de tes offres avec ton nouveau CV en cours…' };
+    if (run.status === 'error') return { tone: 'error', text: run.error ?? 'La réanalyse a échoué.', details: run.details };
+    const n = run.stats.rescored ?? 0;
+    const failed = run.stats.scoreFailed ?? 0;
+    if (n === 0 && failed === 0) return { tone: 'info', text: 'Réanalyse terminée : aucune offre à re-noter.' };
+    return {
+      tone: 'success',
+      text: `${plural(n, 'offre réanalysée', 'offres réanalysées')} avec ton nouveau CV : ${plural(run.stats.kept ?? 0, 'retenue', 'retenues')}, ${plural(run.stats.rejected ?? 0, 'écartée', 'écartées')} (note sous ton seuil).`
+        + (failed > 0 ? ` ${plural(failed, "n'a pas pu être notée", "n'ont pas pu être notées")} : elles gardent leur ancienne note.` : ''),
+    };
+  }
   if (run.status === 'running') return { tone: 'info', text: 'Recherche en cours…' };
   if (run.status === 'error') {
     return { tone: 'error', text: run.error ?? 'La recherche a échoué.', details: run.details };
